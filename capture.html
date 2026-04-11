@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Turf</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap');
+        
+        :root {
+            --bg: #050508;
+            --surface: #0f111a;
+            --surface-border: #1e2235;
+            --primary: #00f0ff;
+            --primary-glow: rgba(0, 240, 255, 0.4);
+            --special: #bc13fe;
+            --special-glow: rgba(188, 19, 254, 0.6);
+            --obstacle: #ff003c;
+            --obstacle-glow: rgba(255, 0, 60, 0.3);
+            --text: #e2e8f0;
+            --text-muted: #64748b;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Rajdhani', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(0, 240, 255, 0.03) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(188, 19, 254, 0.04) 0%, transparent 40%);
+        }
+
+        .noise-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            opacity: 0.04; pointer-events: none; z-index: 100;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        .container {
+            display: flex;
+            gap: 2rem;
+            max-width: 1200px;
+            width: 100%;
+            padding: 2rem;
+            z-index: 10;
+        }
+
+        .sidebar {
+            flex: 0 0 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .header {
+            margin-bottom: 0.5rem;
+        }
+
+        .header h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 3rem;
+            margin: 0 0 0.2rem 0;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff, var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: rgba(15, 17, 26, 0.6);
+            border: 1px solid var(--surface-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .stat-card::before {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: white;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+            display: flex;
+            align-items: baseline;
+            gap: 0.2rem;
+        }
+
+        .stat-value span.unit {
+            font-size: 1rem;
+            color: var(--primary);
+        }
+
+        .super-btn {
+            background: rgba(15, 17, 26, 0.8);
+            border: 1px solid var(--surface-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .super-btn.ready {
+            border-color: var(--special);
+            box-shadow: 0 0 20px var(--special-glow), inset 0 0 15px var(--special-glow);
+            animation: pulse-special 2s infinite alternate;
+        }
+
+        .super-btn.active-mode {
+            background: rgba(188, 19, 254, 0.2);
+            border-color: #fff;
+            box-shadow: 0 0 30px var(--special-glow);
+        }
+
+        .super-btn.disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            filter: grayscale(1);
+        }
+
+        .super-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            color: var(--special);
+            transition: all 0.3s ease;
+        }
+
+        .super-btn.ready .super-icon {
+            background: var(--special);
+            color: white;
+            box-shadow: 0 0 15px var(--special);
+        }
+
+        .super-text {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .super-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: white;
+            letter-spacing: 1px;
+        }
+
+        .super-ready-text {
+            display: none;
+            color: #fff;
+            font-size: 0.9rem;
+            text-shadow: 0 0 5px var(--special);
+        }
+
+        .super-btn.ready .super-ready-text { display: block; }
+        .super-btn.ready .cooldown-text { display: none; }
+
+        .cooldown-text {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .progress-bar-bg {
+            width: 100%; height: 6px; background: rgba(0,0,0,0.5);
+            border-radius: 3px; overflow: hidden; margin-top: 5px;
+        }
+        
+        .progress-bar-fill {
+            height: 100%; background: var(--special); width: 0%;
+            transition: width 0.3s ease;
+            box-shadow: 0 0 10px var(--special);
+        }
+
+        .instructions {
+            background: rgba(15, 17, 26, 0.4);
+            border: 1px dashed var(--surface-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            font-size: 1.1rem;
+            color: #94a3b8;
+            line-height: 1.5;
+        }
+        .instructions span { color: var(--primary); font-weight: bold; }
+        .instructions .spec { color: var(--special); font-weight: bold; }
+        .instructions .obs { color: var(--obstacle); font-weight: bold; }
+
+        .game-wrapper {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .canvas-container {
+            position: relative;
+            background: #000;
+            border-radius: 16px;
+            padding: 8px;
+            border: 1px solid var(--surface-border);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8),
+                        0 0 40px rgba(0, 240, 255, 0.1);
+        }
+
+        canvas {
+            background-color: #030407;
+            border-radius: 8px;
+            display: block;
+            cursor: crosshair;
+        }
+
+        .overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(5, 5, 8, 0.9);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border-radius: 16px;
+            z-index: 20;
+            transition: opacity 0.4s ease;
+        }
+
+        .overlay.hidden {
+            opacity: 0; pointer-events: none;
+        }
+
+        .overlay h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 4rem; margin: 0;
+            background: linear-gradient(135deg, white, var(--primary));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        .overlay p {
+            font-size: 1.5rem; color: var(--text-muted); margin-bottom: 2rem;
+        }
+
+        .start-btn {
+            background: var(--primary);
+            color: #000; font-family: 'Orbitron', sans-serif; font-weight: 700;
+            font-size: 1.2rem; padding: 1rem 3rem; border: none; border-radius: 8px;
+            cursor: pointer; text-transform: uppercase; letter-spacing: 2px;
+            box-shadow: 0 0 20px var(--primary-glow);
+            transition: all 0.2s;
+        }
+        
+        .start-btn:hover {
+            transform: scale(1.05); background: #fff; box-shadow: 0 0 30px #fff;
+        }
+
+        @keyframes pulse-special {
+            0% { box-shadow: 0 0 10px var(--special-glow), inset 0 0 5px var(--special-glow); }
+            100% { box-shadow: 0 0 30px var(--special-glow), inset 0 0 20px var(--special-glow); }
+        }
+        
+    </style>
+</head>
+<body>
+    <div class="noise-overlay"></div>
+    <div class="container">
+        <div class="sidebar">
+            <div class="header">
+                <h1>NEON TURF</h1>
+                <p>Grid Capture Protocol</p>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Area Captured</div>
+                    <div class="stat-value"><span id="pct">0</span><span class="unit">%</span></div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Time Left</div>
+                    <div class="stat-value"><span id="time" style="font-variant-numeric: tabular-nums;">60</span><span class="unit">s</span></div>
+                </div>
+            </div>
+
+            <button id="super-btn" class="super-btn disabled">
+                <div class="super-icon">★</div>
+                <div class="super-text">
+                    <span class="super-title">SUPER GRAB</span>
+                    <span class="cooldown-text" id="cooldown-text">0 / 4 MOVES</span>
+                    <span class="super-ready-text">READY! CLICK TO TOGGLE</span>
+                </div>
+                <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 0 1.25rem;">
+                    <div class="progress-bar-bg"><div class="progress-bar-fill" id="super-progress"></div></div>
+                </div>
+            </button>
+
+            <div class="instructions">
+                <p>❯ <span>Click</span> empty space to capture a rectangle towards the <span>Origin (Top-Left)</span>.</p>
+                <p>❯ <span class="obs">Red blocks</span> are obstacles. They cast uncapturable shadows.</p>
+                <p>❯ Capture the maximum area before time runs out!</p>
+                <p>❯ Use <span class="spec">SUPER GRAB</span> to capture in <strong>all 4 directions</strong> simultaneously!</p>
+            </div>
+        </div>
+
+        <div class="game-wrapper">
+            <div class="canvas-container">
+                <canvas id="gameCanvas" width="640" height="640"></canvas>
+                
+                <div id="start-overlay" class="overlay">
+                    <h2>NEON TURF</h2>
+                    <p>Initialize Hack Sequence</p>
+                    <button class="start-btn" id="start-btn">ENGAGE</button>
+                </div>
+                
+                <div id="end-overlay" class="overlay hidden">
+                    <h2 id="end-title">TIME UP</h2>
+                    <p id="end-desc">You captured 45% of the network.</p>
+                    <button class="start-btn" id="restart-btn">REBOOT</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Settings
+        const GRID_SIZE = 32;
+        const CELL_SIZE = canvas.width / GRID_SIZE;
+        const GAME_DURATION = 60.0;
+        const MOVES_FOR_SUPER = 4;
+        const OBSTACLE_CHANCE = 0.12;
+        
+        // Colors
+        const THEME = {
+            empty: '#030407',
+            grid: 'rgba(0, 240, 255, 0.05)',
+            obstacle: '#ff003c',
+            obstacleCore: '#ffb3c6',
+            captured: '#00f0ff',
+            capturedDark: 'rgba(0, 240, 255, 0.2)',
+            previewGood: 'rgba(0, 240, 255, 0.4)',
+            previewBad: 'rgba(255, 0, 60, 0.2)',
+            previewSpecial: 'rgba(188, 19, 254, 0.5)'
+        };
+
+        // UI Elements
+        const uiPct = document.getElementById('pct');
+        const uiTime = document.getElementById('time');
+        const btnSuper = document.getElementById('super-btn');
+        const uiProgress = document.getElementById('super-progress');
+        const uiCooldown = document.getElementById('cooldown-text');
+        
+        // Game State
+        // 0 = empty, 1 = obstacle, 2 = captured
+        let grid = []; 
+        let captureTimes = []; // for animations
+        let obstaclesCount = 0;
+        let totalCapturable = 0;
+        let capturedCount = 0;
+        
+        let timeLeft = GAME_DURATION;
+        let gameState = 'START'; // START, PLAY, END
+        let lastTime = 0;
+        
+        let normalMovesMade = 0;
+        let superReady = false;
+        let isSpecialMode = false;
+        
+        let mouseX = -1, mouseY = -1;
+        let isHovering = false;
+
+        function initGrid() {
+            grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(0));
+            captureTimes = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(0));
+            obstaclesCount = 0;
+            
+            for(let x=0; x<GRID_SIZE; x++){
+                for(let y=0; y<GRID_SIZE; y++){
+                    // Keep top-left completely open for starting area
+                    if (x < 3 && y < 3) continue;
+                    
+                    if (Math.random() < OBSTACLE_CHANCE) {
+                        grid[x][y] = 1;
+                        obstaclesCount++;
+                    }
+                }
+            }
+            
+            // Seed a starting block at (0,0)
+            grid[0][0] = 2;
+            capturedCount = 1;
+            totalCapturable = (GRID_SIZE * GRID_SIZE) - obstaclesCount;
+            
+            updateUIStats();
+        }
+
+        function updateUIStats() {
+            const pct = Math.floor((capturedCount / totalCapturable) * 100);
+            uiPct.innerText = pct;
+            
+            // Super Button logic
+            if (superReady) {
+                btnSuper.classList.remove('disabled');
+                btnSuper.classList.add('ready');
+                uiProgress.style.width = '100%';
+            } else {
+                btnSuper.classList.add('disabled');
+                btnSuper.classList.remove('ready');
+                btnSuper.classList.remove('active-mode');
+                uiCooldown.innerText = `${normalMovesMade} / ${MOVES_FOR_SUPER} MOVES`;
+                uiProgress.style.width = `${(normalMovesMade / MOVES_FOR_SUPER) * 100}%`;
+                isSpecialMode = false;
+            }
+        }
+
+        // Toggle special mode
+        btnSuper.addEventListener('click', () => {
+            if (superReady && gameState === 'PLAY') {
+                isSpecialMode = !isSpecialMode;
+                if (isSpecialMode) btnSuper.classList.add('active-mode');
+                else btnSuper.classList.remove('active-mode');
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            const rawX = e.clientX - rect.left;
+            const rawY = e.clientY - rect.top;
+            mouseX = Math.floor(rawX / CELL_SIZE);
+            mouseY = Math.floor(rawY / CELL_SIZE);
+            isHovering = true;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isHovering = false;
+        });
+
+        canvas.addEventListener('mousedown', () => {
+            if (gameState !== 'PLAY') return;
+            if (mouseX < 0 || mouseX >= GRID_SIZE || mouseY < 0 || mouseY >= GRID_SIZE) return;
+            if (grid[mouseX][mouseY] === 1) return; // Cant click obstacle
+            
+            const p = getPreview(mouseX, mouseY, isSpecialMode);
+            if (p.capturable.length > 0) {
+                // Execute Capture
+                const now = performance.now();
+                p.capturable.forEach(cell => {
+                    grid[cell.x][cell.y] = 2; // Capture
+                    captureTimes[cell.x][cell.y] = now;
+                    capturedCount++;
+                });
+                
+                // Screen shake effect
+                canvas.style.transform = `translate(${Math.random()*4-2}px, ${Math.random()*4-2}px)`;
+                setTimeout(() => canvas.style.transform = 'translate(0,0)', 50);
+
+                if (isSpecialMode) {
+                    superReady = false;
+                    isSpecialMode = false;
+                    normalMovesMade = 0;
+                } else {
+                    if (!superReady) {
+                        normalMovesMade++;
+                        if (normalMovesMade >= MOVES_FOR_SUPER) {
+                            superReady = true;
+                        }
+                    }
+                }
+                
+                updateUIStats();
+                
+                if (capturedCount >= totalCapturable) {
+                    endGame(true);
+                }
+            }
+        });
+
+        function getPreview(tx, ty, special) {
+            let res = { capturable: [], shadowed: [], boundingBox: [] };
+            
+            let minX = special ? 0 : 0;
+            let maxX = special ? GRID_SIZE - 1 : tx;
+            let minY = special ? 0 : 0;
+            let maxY = special ? GRID_SIZE - 1 : ty;
+            
+            // Build bounding box map
+            for(let x=minX; x<=maxX; x++){
+                for(let y=minY; y<=maxY; y++){
+                    res.boundingBox.push({x,y});
+                }
+            }
+            
+            let shadow = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill(false));
+            
+            for(let ox=0; ox<GRID_SIZE; ox++){
+                for(let oy=0; oy<GRID_SIZE; oy++){
+                    if (grid[ox][oy] === 1) { // Obstacle
+                        if (!special) {
+                            if (ox <= tx && oy <= ty) {
+                                for(let i=0; i<=ox; i++) {
+                                    for(let j=0; j<=oy; j++) {
+                                        shadow[i][j] = true;
+                                    }
+                                }
+                            }
+                        } else {
+                            if (ox <= tx && oy <= ty) { // Q1
+                                for(let i=0; i<=ox; i++) for(let j=0; j<=oy; j++) shadow[i][j] = true;
+                            }
+                            if (ox >= tx && oy <= ty) { // Q2
+                                for(let i=ox; i<GRID_SIZE; i++) for(let j=0; j<=oy; j++) shadow[i][j] = true;
+                            }
+                            if (ox <= tx && oy >= ty) { // Q3
+                                for(let i=0; i<=ox; i++) for(let j=oy; j<GRID_SIZE; j++) shadow[i][j] = true;
+                            }
+                            if (ox >= tx && oy >= ty) { // Q4
+                                for(let i=ox; i<GRID_SIZE; i++) for(let j=oy; j<GRID_SIZE; j++) shadow[i][j] = true;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            for(let p of res.boundingBox) {
+                if (grid[p.x][p.y] !== 1) {
+                    if (shadow[p.x][p.y]) {
+                        res.shadowed.push(p);
+                    } else if (grid[p.x][p.y] === 0) {
+                        res.capturable.push(p);
+                    }
+                }
+            }
+            
+            return res;
+        }
+
+        // --- RENDER LOOP ---
+        function render(time) {
+            requestAnimationFrame(render);
+            const dt = (time - lastTime) / 1000;
+            lastTime = time;
+
+            if (gameState === 'PLAY') {
+                timeLeft -= dt;
+                if (timeLeft <= 0) {
+                    timeLeft = 0;
+                    endGame(false);
+                }
+                uiTime.innerText = Math.ceil(timeLeft);
+            }
+
+            // Draw Background
+            ctx.fillStyle = THEME.empty;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw Grid Lines
+            ctx.strokeStyle = THEME.grid;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            for(let i=0; i<=GRID_SIZE; i++){
+                ctx.moveTo(i * CELL_SIZE, 0); ctx.lineTo(i * CELL_SIZE, canvas.height);
+                ctx.moveTo(0, i * CELL_SIZE); ctx.lineTo(canvas.width, i * CELL_SIZE);
+            }
+            ctx.stroke();
+
+            // Render Preview Layer first so it sites under the actual cells
+            if (gameState === 'PLAY' && isHovering && mouseX >= 0 && mouseY >= 0 && mouseX < GRID_SIZE && mouseY < GRID_SIZE && grid[mouseX][mouseY] !== 1) {
+                const preview = getPreview(mouseX, mouseY, isSpecialMode);
+                
+                const timePulse = Math.sin(time / 150) * 0.15 + 0.85; // 0.7 to 1.0 pulse
+                
+                // Shadowed Bad cells (Red Hash)
+                ctx.fillStyle = THEME.previewBad;
+                preview.shadowed.forEach(p => {
+                    ctx.fillRect(p.x*CELL_SIZE, p.y*CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                });
+                
+                // Good Cells
+                ctx.fillStyle = isSpecialMode ? THEME.previewSpecial : THEME.previewGood;
+                ctx.globalAlpha = timePulse;
+                preview.capturable.forEach(p => {
+                    ctx.fillRect(p.x*CELL_SIZE, p.y*CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                });
+                ctx.globalAlpha = 1.0;
+                
+                // Draw target crosshair
+                ctx.strokeStyle = isSpecialMode ? '#fff' : THEME.primary;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(mouseX*CELL_SIZE, mouseY*CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            }
+
+            // Draw Cells
+            for(let x=0; x<GRID_SIZE; x++){
+                for(let y=0; y<GRID_SIZE; y++){
+                    const cx = x * CELL_SIZE;
+                    const cy = y * CELL_SIZE;
+                    
+                    if (grid[x][y] === 1) {
+                        // Obstacle
+                        const pulse = Math.sin(time/200 + x*y)*0.2 + 0.8;
+                        ctx.fillStyle = THEME.obstacle;
+                        ctx.globalAlpha = pulse;
+                        ctx.fillRect(cx+2, cy+2, CELL_SIZE-4, CELL_SIZE-4);
+                        ctx.globalAlpha = 1.0;
+                        ctx.fillStyle = THEME.obstacleCore;
+                        ctx.fillRect(cx+CELL_SIZE/2-2, cy+CELL_SIZE/2-2, 4, 4);
+                        
+                    } else if (grid[x][y] === 2) {
+                        // Captured
+                        const age = time - captureTimes[x][y];
+                        if (age < 300) {
+                            // Flash animation
+                            const flash = 1 - (age / 300);
+                            ctx.fillStyle = `rgba(255, 255, 255, ${flash})`;
+                            ctx.fillRect(cx, cy, CELL_SIZE, CELL_SIZE);
+                        } else {
+                            // Solid captured
+                            ctx.fillStyle = THEME.capturedDark;
+                            ctx.fillRect(cx+1, cy+1, CELL_SIZE-2, CELL_SIZE-2);
+                            
+                            // Core
+                            ctx.fillStyle = THEME.captured;
+                            ctx.fillRect(cx+CELL_SIZE/2-1, cy+CELL_SIZE/2-1, 2, 2);
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- GAME FLOW ---
+        const startOverlay = document.getElementById('start-overlay');
+        const endOverlay = document.getElementById('end-overlay');
+        
+        document.getElementById('start-btn').addEventListener('click', () => {
+            initGrid();
+            gameState = 'PLAY';
+            timeLeft = GAME_DURATION;
+            startOverlay.classList.add('hidden');
+        });
+        
+        document.getElementById('restart-btn').addEventListener('click', () => {
+            initGrid();
+            normalMovesMade = 0; superReady = false; isSpecialMode = false;
+            updateUIStats();
+            gameState = 'PLAY';
+            timeLeft = GAME_DURATION;
+            endOverlay.classList.add('hidden');
+        });
+
+        function endGame(won) {
+            gameState = 'END';
+            endOverlay.classList.remove('hidden');
+            const pct = Math.floor((capturedCount / totalCapturable) * 100);
+            
+            const title = document.getElementById('end-title');
+            const desc = document.getElementById('end-desc');
+            
+            if (won) {
+                title.innerText = "SYSTEM SECURED";
+                title.style.background = "linear-gradient(135deg, white, var(--primary))";
+                title.style.webkitBackgroundClip = "text";
+                desc.innerText = `Flawless run! 100% captured with ${Math.ceil(timeLeft)}s remaining.`;
+            } else {
+                title.innerText = "TIME OUT";
+                title.style.background = "linear-gradient(135deg, #ef4444, #f97316)";
+                title.style.webkitBackgroundClip = "text";
+                desc.innerText = `You captured ${pct}% of the network before extraction.`;
+            }
+        }
+
+        // Boostrap rendering
+        requestAnimationFrame(render);
+        
+    </script>
+</body>
+</html>
