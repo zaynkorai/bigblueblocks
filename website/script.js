@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const node = nodes[randomIndex];
 
         // Pick a random color from the app's official theme
-        const colors = ['#00F0FF', '#FFC900', '#BC13FE', '#FF5E00', '#2E7DFF'];
+        const colors = ['#00FF55', '#FFC900', '#BC13FE', '#FF5E00', '#2E7DFF'];
         const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
         node.style.background = randomColor;

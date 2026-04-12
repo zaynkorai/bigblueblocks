@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'dart:math';
 import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -197,8 +200,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
 
-  /// Gated haptic feedback — respects vibration toggle.
+  /// Gated haptic and sound feedback.
   void _haptic(HapticType type) {
+    if (_soundEnabled) {
+      SystemSound.play(SystemSoundType.click);
+    }
     if (!_vibrationEnabled) return;
     switch (type) {
       case HapticType.light:
@@ -243,6 +249,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       onChanged: (v) {
                         setDialogState(() => _soundEnabled = v);
                         setState(() {});
+                        _saveSettings();
+                        if (v) SystemSound.play(SystemSoundType.click);
                       },
                     ),
                     const SizedBox(height: 16),
@@ -253,6 +261,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       onChanged: (v) {
                         setDialogState(() => _vibrationEnabled = v);
                         setState(() {});
+                        _saveSettings();
                         if (v) _haptic(HapticType.light);
                       },
                     ),
@@ -336,31 +345,64 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 const SizedBox(height: 24),
 
                 // Links
-                _linkRow(icon: Icons.mail_rounded, label: 'Contact Us'),
                 _linkRow(
-                    icon: Icons.share_rounded, label: 'Share with friends'),
+                  icon: Icons.mail_rounded,
+                  label: 'Contact Us',
+                  onTap: () {
+                    final Uri emailLaunchUri = Uri(
+                      scheme: 'mailto',
+                      path: 'support@bigblueblocks.app',
+                      queryParameters: {
+                        'subject': 'Support Request - Big Blue Blocks'
+                      },
+                    );
+                    launchUrl(emailLaunchUri);
+                  },
+                ),
+                _linkRow(
+                  icon: Icons.share_rounded,
+                  label: 'Share with friends',
+                  onTap: () {
+                    final size = MediaQuery.of(context).size;
+                    Share.share(
+                      'Check out Big Blue Blocks! The ultimate puzzle experience for your mind. https://bigblueblocks.app',
+                      sharePositionOrigin: Rect.fromLTWH(
+                          0, size.height / 2, size.width, size.height / 2),
+                    );
+                  },
+                ),
                 const SizedBox(height: 12),
 
-                // Social Icons Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _socialIcon(Icons.facebook_rounded),
-                    _socialIcon(Icons.camera_alt_rounded), // Insta placeholder
-                    _socialIcon(
-                        Icons.alternate_email_rounded), // Twitter/X placeholder
-                  ],
-                ),
+
 
                 const SizedBox(height: 12),
                 Divider(color: fontWhite.withValues(alpha: 0.1)),
                 const SizedBox(height: 12),
 
                 _linkRow(
-                    icon: Icons.description_rounded, label: 'Terms of Service'),
+                  icon: Icons.description_rounded,
+                  label: 'Terms of Service',
+                  onTap: () => launchUrl(
+                      Uri.parse('https://bigblueblocks.app/terms.html')),
+                ),
                 _linkRow(
-                    icon: Icons.privacy_tip_rounded, label: 'Privacy Policy'),
-                _linkRow(icon: Icons.info_rounded, label: 'About Us'),
+                  icon: Icons.privacy_tip_rounded,
+                  label: 'Privacy Policy',
+                  onTap: () => launchUrl(
+                      Uri.parse('https://bigblueblocks.app/privacy.html')),
+                ),
+                _linkRow(
+                  icon: Icons.info_rounded,
+                  label: 'About Us',
+                  onTap: () {
+                    showAboutDialog(
+                      context: context,
+                      applicationName: 'BigBlueBlocks',
+                      applicationVersion: '1.0.0',
+                      applicationLegalese: '© 2026 BigBlueBlocks',
+                    );
+                  },
+                ),
 
                 const SizedBox(height: 16),
                 TextButton(
@@ -377,12 +419,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _linkRow({required IconData icon, required String label}) {
+  Widget _linkRow(
+      {required IconData icon, required String label, VoidCallback? onTap}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: GestureDetector(
         onTap: () {
           _haptic(HapticType.light);
+          if (onTap != null) onTap();
         },
         child: Row(
           children: [
@@ -396,23 +440,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             Icon(Icons.chevron_right_rounded,
                 color: fontWhite.withValues(alpha: 0.3), size: 20),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _socialIcon(IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: GestureDetector(
-        onTap: () => _haptic(HapticType.light),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: bgDarkBlue.withValues(alpha: 0.5),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: fontWhite.withValues(alpha: 0.8), size: 22),
         ),
       ),
     );
@@ -458,9 +485,30 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   //  LIFECYCLE
   // ═══════════════════════════════════════════════════
 
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      highScore = prefs.getInt('highScore') ?? 0;
+      _soundEnabled = prefs.getBool('soundEnabled') ?? true;
+      _vibrationEnabled = prefs.getBool('vibrationEnabled') ?? true;
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('soundEnabled', _soundEnabled);
+    await prefs.setBool('vibrationEnabled', _vibrationEnabled);
+  }
+
+  Future<void> _saveHighScore(int score) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('highScore', score);
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadSettings();
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -918,6 +966,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       if (gameScore > highScore) {
         highScore = gameScore;
         isNewHighScore = true;
+        _saveHighScore(highScore);
       }
       _shakeController.forward(from: 0);
     } else {
@@ -1022,8 +1071,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════
 
   Widget _buildBoard() {
-
-
     return LayoutBuilder(
       builder: (context, constraints) {
         return GestureDetector(
