@@ -1,5 +1,5 @@
 name: bigblueblocks
-description: A neo-cyberpunk puzzle and grid capture game.
+description: A simple puzzle game.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
