@@ -1,0 +1,22 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Push app metadata to App Store Connect"
+  lane :push_metadata do
+    deliver(
+      force: true,
+      skip_screenshots: true,
+      skip_binary_upload: true
+    )
+  end
+
+  desc "Register the app on App Store Connect if it doesn't exist"
+  lane :create_app do
+    produce(
+      app_name: "Big Blue Blocks",
+      language: "en-US",
+      app_identifier: "com.bigblueblocks.app",
+      sku: "bigblueblocks"
+    )
+  end
+end

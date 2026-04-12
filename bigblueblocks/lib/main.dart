@@ -17,8 +17,8 @@ void main() {
 //  THEME CONSTANTS
 // ═══════════════════════════════════════════════════════
 
-const Color bgDarkBlue = Color(0xFF0A1931);
-const Color cardDarkBlue = Color(0xFF152A4A);
+const Color bgDarkBlue = Color(0xFF010816);
+const Color cardDarkBlue = Color(0xFF0B1B3C);
 const Color gameYellow = Color(0xFFFFC900);
 const Color fontWhite = Colors.white;
 
@@ -29,7 +29,7 @@ const List<Color> shapeColors = [
   Color(0xFFFFC900), // 3 - Yellow
   Color(0xFFBC13FE), // 4 - Purple
   Color(0xFFFF5E00), // 5 - Orange
-  Color(0xFF0077FF), // 6 - Blue
+  Color(0xFF2E7DFF), // 6 - Blue
   Color(0xFF00FF55), // 7 - Green
   Color(0xFFFF003C), // 8 - Red
   Color(0xFFFF33CC), // 9 - Pink
