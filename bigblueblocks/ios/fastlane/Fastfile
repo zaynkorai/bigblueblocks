@@ -16,8 +16,43 @@
 default_platform(:ios)
 
 platform :ios do
-  desc "Description of what the lane does"
-  lane :custom_lane do
-    # add actions here: https://docs.fastlane.tools/actions
+  desc "Pull metadata from App Store Connect"
+  lane :pull_metadata do
+    deliver(
+      run_validator: false,
+      skip_binary_upload: true,
+      skip_screenshots: false,
+      skip_metadata: false,
+      force: true
+    )
+  end
+
+  desc "Push ONLY the app icon to App Store Connect"
+  lane :push_icon_only do
+    # Copy our generated icon to the location deliver expects
+    sh "cp Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png fastlane/metadata/app_icon.png"
+    
+    deliver(
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      force: true
+    )
+  end
+
+  desc "Build and install directly to the connected device (1 Year Expiry)"
+  lane :install_direct do
+    # 1. Build the IPA in Ad-Hoc Release mode
+    build_app(
+      scheme: "Runner",
+      export_method: "ad-hoc",
+      silent: true
+    )
+
+    # 2. Install the IPA onto the connected device
+    # Note: Requires 'brew install ios-deploy'
+    install_on_device(
+      ipa: Actions.lane_context[SharedValues::IPA_OUTPUT_PATH]
+    )
   end
 end

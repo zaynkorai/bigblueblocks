@@ -1,2 +1,0 @@
-json_key_file("./service_account_key.json") # Path to the json secret file - local to the bundle id
-package_name("com.bigblueblocks.app") # e.g. com.krausefx.app
