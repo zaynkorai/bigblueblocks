@@ -36,12 +36,6 @@ const List<Color> shapeColors = [
   Color(0xFF00FF55), // 7 - Green
   Color(0xFFFF003C), // 8 - Red
   Color(0xFFFF33CC), // 9 - Pink
-  Color(0xFFCCFF00), // 10 - Lime
-  Color(0xFF00CED1), // 11 - Teal
-  Color(0xFFFF6B81), // 12 - Coral
-  Color(0xFF7B68EE), // 13 - Slate Blue
-  Color(0xFFFFD700), // 14 - Gold
-  Color(0xFF40E0D0), // 15 - Turquoise
 ];
 
 enum HapticType { light, medium, heavy, selection }
@@ -187,6 +181,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   int? selectedPieceIndex;
   Set<GameCoordinate> activeTrace = {};
   bool _showTraceHint = true;
+
+  // ── Interactive Tutorial ──
+  int _tutorialStep = 0; // 0=off, 1=select piece, 2=tap cell, 3=drag trace, 4=done
 
   // ── Gamification ──
   int comboCount = 0;
@@ -472,6 +469,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     );
   }
 
+  void _showTutorial() {
+    setState(() {
+      _tutorialStep = 1;
+      _requiresLift = false;
+      activeTrace.clear();
+      selectedPieceIndex = null;
+    });
+  }
+
   // ── Visual Feedback ──
   final List<ScorePopup> _scorePopups = [];
   String? _comboText;
@@ -487,11 +493,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
     setState(() {
       highScore = prefs.getInt('highScore') ?? 0;
       _soundEnabled = prefs.getBool('soundEnabled') ?? true;
       _vibrationEnabled = prefs.getBool('vibrationEnabled') ?? true;
     });
+
+    if (isFirstLaunch) {
+      await prefs.setBool('isFirstLaunch', false);
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          setState(() {
+            _tutorialStep = 1;
+            selectedPieceIndex = null;
+          });
+        }
+      });
+    }
   }
 
   Future<void> _saveSettings() async {
@@ -619,7 +638,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   List<GamePiece?> _createPieceSet() {
     const int minColor = 2;
-    const int maxColor = 15;
+    const int maxColor = 9;
     Random rnd = Random();
     List<GamePiece?> pieces = [];
     final pool = _piecePoolForLevel(level);
@@ -648,6 +667,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     setState(() {
       selectedPieceIndex = index;
       activeTrace.clear();
+      if (_tutorialStep == 1 || _tutorialStep == 3) _tutorialStep = 2;
     });
   }
 
@@ -946,6 +966,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     activeTrace.clear();
     _showTraceHint = false;
 
+    // ── Advance tutorial on first successful placement ──
+    if (_tutorialStep == 3) {
+      _tutorialStep = 0; // Hide the tracing instruction immediately
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) {
+          setState(() => _tutorialStep = 4);
+          Future.delayed(const Duration(milliseconds: 3000), () {
+            if (mounted && _tutorialStep == 4) setState(() => _tutorialStep = 0);
+          });
+        }
+      });
+    }
+
     // ── Refill from next set if all used ──
     if (availablePieces.every((p) => p == null)) {
       availablePieces = List<GamePiece?>.from(nextPieces);
@@ -962,6 +995,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     // ── Check game over ──
     if (!canAnyPieceFit()) {
+      _tutorialStep = 0; // stop tutorial
       gameState = 'END';
       if (gameScore > highScore) {
         highScore = gameScore;
@@ -999,6 +1033,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     Set<GameCoordinate> simulatedTrace = Set.from(activeTrace)..add(newPos);
     if (!isValidTraceShape(simulatedTrace, currentPiece.shape)) {
       _haptic(HapticType.selection);
+      _shakeController.forward(from: 0);
       return;
     }
 
@@ -1094,6 +1129,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 if (selectedPieceIndex != null) {
                   activeTrace.clear();
                   activeTrace.add(tappedPos);
+                  if (_tutorialStep == 2) _tutorialStep = 3;
                   // Immediately complete if piece is 1 cell (tap = place)
                   _tryCompletePlacement();
                 }
@@ -1281,281 +1317,463 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: bgDarkBlue,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            // ── Top bar: spacing + settings gear ──
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: layout.spacingSm),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  GestureDetector(
-                    onTap: _showSettings,
-                    child: Icon(Icons.settings_rounded,
-                        color: fontWhite.withValues(alpha: 0.4),
-                        size: layout.fontMd * 1.8),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Stats Row ──
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: layout.spacingSm,
-              runSpacing: layout.spacingXs,
+            // ── Main game column ──
+            Column(
               children: [
-                _buildStatCard("SCORE", "$score", layout),
-                _buildStatCard("LVL", "$level", layout),
-                if (comboCount > 1)
-                  _buildStatCard("COMBO", "×$comboCount", layout,
-                      highlight: true),
-                if (highScore > 0)
-                  _buildStatCard("BEST", "$highScore", layout,
-                      icon: Icons.emoji_events),
-              ],
-            ),
+                // ── Top bar: spacing + settings gear ──
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: layout.spacingSm),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      GestureDetector(
+                        onTap: _showTutorial,
+                        child: Icon(Icons.help_outline_rounded,
+                            color: fontWhite.withValues(alpha: 0.4),
+                            size: layout.fontMd * 1.8),
+                      ),
+                      const SizedBox(width: 16),
+                      GestureDetector(
+                        onTap: _showSettings,
+                        child: Icon(Icons.settings_rounded,
+                            color: fontWhite.withValues(alpha: 0.4),
+                            size: layout.fontMd * 1.8),
+                      ),
+                    ],
+                  ),
+                ),
 
-            SizedBox(height: layout.spacingXs),
+                // ── Stats Row ──
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: layout.spacingSm,
+                  runSpacing: layout.spacingXs,
+                  children: [
+                    _buildStatCard("SCORE", "$score", layout),
+                    _buildStatCard("LVL", "$level", layout),
+                    if (comboCount > 1)
+                      _buildStatCard("COMBO", "×$comboCount", layout,
+                          highlight: true),
+                    if (highScore > 0)
+                      _buildStatCard("BEST", "$highScore", layout,
+                          icon: Icons.emoji_events),
+                  ],
+                ),
 
-            // ── Board ──
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: layout.spacingSm),
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: AnimatedBuilder(
-                      animation: _shakeController,
-                      builder: (context, child) {
-                        double shake = sin(_shakeController.value * pi * 6) *
-                            (1 - _shakeController.value) *
-                            6;
-                        return Transform.translate(
-                          offset: Offset(shake, 0),
-                          child: child,
-                        );
-                      },
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: bgDarkBlue,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: comboCount > 1 ? gameYellow : fontWhite,
-                            width: comboCount > 1 ? 3.0 : 2.0,
-                          ),
-                          boxShadow: comboCount > 1
-                              ? [
-                                  BoxShadow(
-                                    color: gameYellow.withValues(
-                                        alpha: (0.2 + comboCount * 0.08)
-                                            .clamp(0.0, 0.6)),
-                                    blurRadius: 10.0 + comboCount * 3.0,
-                                    spreadRadius: 1,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        padding: const EdgeInsets.all(3.0),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              RepaintBoundary(child: _buildBoard()),
+                SizedBox(height: layout.spacingXs),
 
-                              // Score popups
-                              ..._scorePopups
-                                  .map((p) => _buildScorePopupWidget(p)),
+                // ── Board ──
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: layout.spacingSm),
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: AnimatedBuilder(
+                          animation: _shakeController,
+                          builder: (context, child) {
+                            double shake =
+                                sin(_shakeController.value * pi * 6) *
+                                    (1 - _shakeController.value) *
+                                    6;
+                            return Transform.translate(
+                              offset: Offset(shake, 0),
+                              child: child,
+                            );
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: bgDarkBlue,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color:
+                                    comboCount > 1 ? gameYellow : fontWhite,
+                                width: comboCount > 1 ? 3.0 : 2.0,
+                              ),
+                              boxShadow: comboCount > 1
+                                  ? [
+                                      BoxShadow(
+                                        color: gameYellow.withValues(
+                                            alpha: (0.2 + comboCount * 0.08)
+                                                .clamp(0.0, 0.6)),
+                                        blurRadius: 10.0 + comboCount * 3.0,
+                                        spreadRadius: 1,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            padding: const EdgeInsets.all(3.0),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  RepaintBoundary(child: _buildBoard()),
 
-                              // Combo text overlay
-                              if (_comboText != null)
-                                IgnorePointer(
-                                  child: Center(
-                                    child: TweenAnimationBuilder<double>(
-                                      key: ValueKey(_comboText),
-                                      duration:
-                                          const Duration(milliseconds: 400),
-                                      tween: Tween(begin: 0.5, end: 1.0),
-                                      curve: Curves.elasticOut,
-                                      builder: (context, scale, child) {
-                                        return Transform.scale(
-                                            scale: scale, child: child);
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 20, vertical: 10),
-                                        decoration: BoxDecoration(
-                                          color: bgDarkBlue.withValues(
-                                              alpha: 0.85),
-                                          borderRadius:
-                                              BorderRadius.circular(16),
-                                          border: Border.all(
-                                              color: gameYellow, width: 2),
-                                          boxShadow: [
-                                            BoxShadow(
-                                                color: gameYellow.withValues(
-                                                    alpha: 0.4),
-                                                blurRadius: 20),
-                                          ],
+                                  // Score popups
+                                  ..._scorePopups
+                                      .map((p) => _buildScorePopupWidget(p)),
+
+                                  // Combo text overlay
+                                  if (_comboText != null)
+                                    IgnorePointer(
+                                      child: Center(
+                                        child:
+                                            TweenAnimationBuilder<double>(
+                                          key: ValueKey(_comboText),
+                                          duration: const Duration(
+                                              milliseconds: 400),
+                                          tween:
+                                              Tween(begin: 0.5, end: 1.0),
+                                          curve: Curves.elasticOut,
+                                          builder: (context, scale, child) {
+                                            return Transform.scale(
+                                                scale: scale, child: child);
+                                          },
+                                          child: Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 20,
+                                                    vertical: 10),
+                                            decoration: BoxDecoration(
+                                              color: bgDarkBlue.withValues(
+                                                  alpha: 0.85),
+                                              borderRadius:
+                                                  BorderRadius.circular(16),
+                                              border: Border.all(
+                                                  color: gameYellow,
+                                                  width: 2),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                    color: gameYellow
+                                                        .withValues(
+                                                            alpha: 0.4),
+                                                    blurRadius: 20),
+                                              ],
+                                            ),
+                                            child: Text(_comboText!,
+                                                style: TextStyle(
+                                                  color: gameYellow,
+                                                  fontSize:
+                                                      layout.fontLg * 0.9,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: 2,
+                                                )),
+                                          ),
                                         ),
-                                        child: Text(_comboText!,
-                                            style: TextStyle(
-                                              color: gameYellow,
-                                              fontSize: layout.fontLg * 0.9,
-                                              fontWeight: FontWeight.bold,
-                                              letterSpacing: 2,
-                                            )),
                                       ),
                                     ),
-                                  ),
-                                ),
 
-                              // Game over overlay
-                              if (gameState == 'STUCK' || gameState == 'END')
-                                Container(
-                                  color: bgDarkBlue.withValues(alpha: 0.9),
-                                  child: Center(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        if (isNewHighScore) ...[
-                                          const Icon(Icons.stars,
-                                              color: gameYellow, size: 56),
-                                          SizedBox(height: layout.spacingMd),
-                                          Text("NEW RECORD!",
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
+                                  // Game over overlay
+                                  if (gameState == 'STUCK' ||
+                                      gameState == 'END')
+                                    Container(
+                                      color:
+                                          bgDarkBlue.withValues(alpha: 0.9),
+                                      child: Center(
+                                        child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            if (isNewHighScore) ...[
+                                              const Icon(Icons.stars,
                                                   color: gameYellow,
-                                                  fontSize: layout.fontXl,
-                                                  fontWeight: FontWeight.bold,
-                                                  letterSpacing: 2)),
-                                        ] else ...[
-                                          Text(
-                                              gameState == 'STUCK'
-                                                  ? "TRAPPED!"
-                                                  : "GAME OVER",
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                  color: gameState == 'STUCK'
-                                                      ? gameYellow
-                                                      : fontWhite,
-                                                  fontSize: layout.fontXl,
-                                                  fontWeight: FontWeight.bold)),
-                                        ],
-                                        SizedBox(height: layout.spacingSm),
-                                        Text("FINAL SCORE: $score",
-                                            style: TextStyle(
-                                                color: fontWhite,
-                                                fontSize: layout.fontMd,
-                                                letterSpacing: 1.5)),
-                                        if (streakCount > 0) ...[
-                                          SizedBox(height: layout.spacingXs),
-                                          Text("STREAK: $streakCount",
-                                              style: TextStyle(
-                                                  color: fontWhite.withValues(
-                                                      alpha: 0.6),
-                                                  fontSize: layout.fontSm,
-                                                  letterSpacing: 1)),
-                                        ],
-                                        if (linesCleared > 0) ...[
-                                          SizedBox(height: layout.spacingXs),
-                                          Text(
-                                              "LINES: $linesCleared  •  LEVEL: $level",
-                                              style: TextStyle(
-                                                  color: fontWhite.withValues(
-                                                      alpha: 0.5),
-                                                  fontSize: layout.fontSm,
-                                                  letterSpacing: 1)),
-                                        ],
-                                      ],
+                                                  size: 56),
+                                              SizedBox(
+                                                  height: layout.spacingMd),
+                                              Text("NEW RECORD!",
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                      color: gameYellow,
+                                                      fontSize:
+                                                          layout.fontXl,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      letterSpacing: 2)),
+                                            ] else ...[
+                                              Text(
+                                                  gameState == 'STUCK'
+                                                      ? "TRAPPED!"
+                                                      : "GAME OVER",
+                                                  textAlign: TextAlign.center,
+                                                  style: TextStyle(
+                                                      color:
+                                                          gameState == 'STUCK'
+                                                              ? gameYellow
+                                                              : fontWhite,
+                                                      fontSize:
+                                                          layout.fontXl,
+                                                      fontWeight:
+                                                          FontWeight.bold)),
+                                            ],
+                                            SizedBox(
+                                                height: layout.spacingSm),
+                                            Text("FINAL SCORE: $score",
+                                                style: TextStyle(
+                                                    color: fontWhite,
+                                                    fontSize: layout.fontMd,
+                                                    letterSpacing: 1.5)),
+                                            if (streakCount > 0) ...[
+                                              SizedBox(
+                                                  height: layout.spacingXs),
+                                              Text("STREAK: $streakCount",
+                                                  style: TextStyle(
+                                                      color: fontWhite
+                                                          .withValues(
+                                                              alpha: 0.6),
+                                                      fontSize:
+                                                          layout.fontSm,
+                                                      letterSpacing: 1)),
+                                            ],
+                                            if (linesCleared > 0) ...[
+                                              SizedBox(
+                                                  height: layout.spacingXs),
+                                              Text(
+                                                  "LINES: $linesCleared  •  LEVEL: $level",
+                                                  style: TextStyle(
+                                                      color: fontWhite
+                                                          .withValues(
+                                                              alpha: 0.5),
+                                                      fontSize:
+                                                          layout.fontSm,
+                                                      letterSpacing: 1)),
+                                            ],
+                                            SizedBox(height: layout.spacingMd),
+                                            ElevatedButton(
+                                              onPressed: () {
+                                                _haptic(HapticType.light);
+                                                initGame();
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: gameYellow,
+                                                padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+                                              ),
+                                              child: Text("PLAY AGAIN", style: TextStyle(color: bgDarkBlue, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
-                            ],
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
+
+                // ── Hint text ──
+                if (gameState == 'PLAY' && _showTraceHint && _tutorialStep == 0)
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: layout.spacingXs),
+                    child: TweenAnimationBuilder<double>(
+                      duration: const Duration(milliseconds: 800),
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      builder: (context, value, child) {
+                        return Opacity(opacity: value, child: child);
+                      },
+                      child: Text(
+                        activeTrace.length <= 1
+                            ? "TAP ANY CELL TO START"
+                            : "DRAG TO TRACE THE SHAPE",
+                        style: TextStyle(
+                          color: gameYellow,
+                          fontSize: layout.fontSm,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                SizedBox(height: layout.spacingXs),
+
+                // ── Piece selector ──
+                _buildPieceSelector(layout),
+
+                SizedBox(height: layout.spacingXs),
+
+                // ── Next preview ──
+                if (gameState == 'PLAY') _buildNextPreview(layout),
+
+                SizedBox(height: layout.spacingSm),
+
+                // ── Action button ──
+                if (gameState != 'PLAY')
+                  AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) {
+                      double s = 1.0 + (_pulseController.value * 0.025);
+                      return Transform.scale(scale: s, child: child);
+                    },
+                    child: SizedBox(
+                      width: layout.buttonWidth,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _haptic(HapticType.light);
+                          initGame();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: gameYellow,
+                          elevation: 0,
+                          padding: EdgeInsets.symmetric(
+                              vertical: layout.buttonPadV),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(100)),
+                        ),
+                        child: Text("NEW GAME",
+                            style: TextStyle(
+                                color: bgDarkBlue,
+                                fontSize: layout.buttonFontSize,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1)),
+                      ),
+                    ),
+                  )
+                else
+                  SizedBox(height: layout.spacingSm),
+
+                SizedBox(height: layout.spacingXs),
+              ],
             ),
 
-            // ── Hint text ──
-            if (gameState == 'PLAY' && _showTraceHint)
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: layout.spacingXs),
-                child: TweenAnimationBuilder<double>(
-                  duration: const Duration(milliseconds: 800),
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  builder: (context, value, child) {
-                    return Opacity(opacity: value, child: child);
-                  },
-                  child: Text(
-                    activeTrace.length <= 1
-                        ? "TAP ANY CELL TO START"
-                        : "DRAG TO TRACE THE SHAPE",
-                    style: TextStyle(
-                      color: gameYellow,
-                      fontSize: layout.fontSm,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                    ),
+            // ── Interactive Tutorial Overlay ──
+            if (_tutorialStep > 0) _buildTutorialOverlay(layout),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTutorialOverlay(GameLayout layout) {
+    String message;
+    IconData icon;
+    Alignment alignment;
+    IconData? arrowIcon;
+
+    switch (_tutorialStep) {
+      case 1:
+        message = "TAP A SHAPE BELOW\nTO SELECT IT";
+        icon = Icons.touch_app_rounded;
+        alignment = const Alignment(0, 0.45);
+        arrowIcon = Icons.arrow_downward_rounded;
+        break;
+      case 2:
+        message = "NOW TAP AN EMPTY CELL\nON THE GRID";
+        icon = Icons.grid_4x4_rounded;
+        alignment = const Alignment(0, -0.80);
+        arrowIcon = Icons.arrow_downward_rounded;
+        break;
+      case 3:
+        message = "DRAG YOUR FINGER\nTO TRACE THE SHAPE";
+        icon = Icons.swipe_rounded;
+        alignment = const Alignment(0, -0.80);
+        arrowIcon = Icons.arrow_downward_rounded;
+        break;
+      case 4:
+        message = "GREAT JOB! 🎉\nYOU'RE READY TO PLAY!";
+        icon = Icons.celebration_rounded;
+        alignment = Alignment.center;
+        arrowIcon = null; // No arrow needed
+        break;
+      default:
+        return const SizedBox.shrink();
+    }
+
+    return IgnorePointer(
+      ignoring: _tutorialStep < 4,
+      child: GestureDetector(
+        onTap: _tutorialStep == 4
+            ? () => setState(() => _tutorialStep = 0)
+            : null,
+        behavior: _tutorialStep == 4
+            ? HitTestBehavior.opaque
+            : HitTestBehavior.translucent,
+        child: Container(
+          color: _tutorialStep == 4
+              ? bgDarkBlue.withValues(alpha: 0.6)
+              : Colors.transparent,
+          child: Align(
+            alignment: alignment,
+            child: TweenAnimationBuilder<double>(
+              key: ValueKey(_tutorialStep),
+              duration: const Duration(milliseconds: 500),
+              tween: Tween(begin: 0.0, end: 1.0),
+              curve: Curves.elasticOut,
+              builder: (context, value, child) {
+                return Transform.scale(
+                  scale: 0.5 + value * 0.5,
+                  child: Opacity(
+                    opacity: value.clamp(0.0, 1.0),
+                    child: child,
+                  ),
+                );
+              },
+              child: IgnorePointer(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 32),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                  decoration: BoxDecoration(
+                    color: cardDarkBlue,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: gameYellow, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                          color: gameYellow.withValues(alpha: 0.3),
+                          blurRadius: 20,
+                          spreadRadius: 2),
+                      BoxShadow(
+                          color: bgDarkBlue.withValues(alpha: 0.8),
+                          blurRadius: 40,
+                          spreadRadius: 10),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, color: gameYellow, size: 36),
+                      const SizedBox(height: 12),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: fontWhite,
+                          fontSize: layout.fontMd,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                          height: 1.4,
+                        ),
+                      ),
+                      if (arrowIcon != null) ...[
+                        const SizedBox(height: 8),
+                        AnimatedBuilder(
+                          animation: _pulseController,
+                          builder: (context, child) {
+                            return Opacity(
+                              opacity:
+                                  0.4 + _pulseController.value * 0.6,
+                              child: child,
+                            );
+                          },
+                          child: Icon(
+                            arrowIcon,
+                            color: gameYellow,
+                            size: 24,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
-
-            SizedBox(height: layout.spacingXs),
-
-            // ── Piece selector ──
-            _buildPieceSelector(layout),
-
-            SizedBox(height: layout.spacingXs),
-
-            // ── Next preview ──
-            if (gameState == 'PLAY') _buildNextPreview(layout),
-
-            SizedBox(height: layout.spacingSm),
-
-            // ── Action button ──
-            if (gameState != 'PLAY')
-              AnimatedBuilder(
-                animation: _pulseController,
-                builder: (context, child) {
-                  double s = 1.0 + (_pulseController.value * 0.025);
-                  return Transform.scale(scale: s, child: child);
-                },
-                child: SizedBox(
-                  width: layout.buttonWidth,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      _haptic(HapticType.light);
-                      initGame();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: gameYellow,
-                      elevation: 0,
-                      padding:
-                          EdgeInsets.symmetric(vertical: layout.buttonPadV),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(100)),
-                    ),
-                    child: Text("NEW GAME",
-                        style: TextStyle(
-                            color: bgDarkBlue,
-                            fontSize: layout.buttonFontSize,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1)),
-                  ),
-                ),
-              )
-            else
-              SizedBox(height: layout.spacingSm),
-
-            SizedBox(height: layout.spacingXs),
-          ],
+            ),
+          ),
         ),
       ),
     );
@@ -1588,12 +1806,26 @@ class ShapeHudPainter extends CustomPainter {
         ? shapeColors[colorIndex]
         : Colors.grey;
 
-    Paint p = Paint()..color = color;
     for (var c in targetShape) {
       Rect rect =
           Rect.fromLTWH(offX + c.x * cs, offY + c.y * cs, cs, cs).deflate(2.0);
+          
+      Paint p = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color.withValues(alpha: 0.6), color],
+        ).createShader(rect);
+
       canvas.drawRRect(
           RRect.fromRectAndRadius(rect, Radius.circular(cs * 0.25)), p);
+
+      Paint highlight = Paint()
+        ..color = Colors.white.withValues(alpha: 0.25)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(rect.deflate(1.0), Radius.circular(cs * 0.20)), highlight);
     }
   }
 
@@ -1652,8 +1884,15 @@ class GamePainter extends CustomPainter {
             RRect.fromRectAndRadius(cellRect, Radius.circular(radius));
 
         if (grid[x][y] == 1) {
-          // Hurdle: solid white rounded rect with X mark
-          canvas.drawRRect(rrect, obstaclePaint);
+          // Hurdle: glowing red gradient
+          Paint hurdleGradient = Paint()
+            ..shader = RadialGradient(
+              colors: [const Color(0xFFFF7A7A), const Color(0xFFD61C1C)],
+              focal: Alignment.center,
+              radius: 0.8,
+            ).createShader(cellRect);
+          canvas.drawRRect(rrect, hurdleGradient);
+
           double xi = cellRect.width * 0.28;
           canvas.drawLine(
             Offset(cellRect.left + xi, cellRect.top + xi),
@@ -1666,19 +1905,29 @@ class GamePainter extends CustomPainter {
             hurdleXPaint,
           );
         } else if (grid[x][y] >= 2) {
-          // Captured cell with color, guarded
+          // Captured cell with color gradient
           int ci = grid[x][y];
           Color cellColor = (ci >= 0 && ci < shapeColors.length)
               ? shapeColors[ci]
               : Colors.grey;
-          Paint capturedPaint = Paint()..color = cellColor;
+              
+          Paint capturedPaint = Paint()
+            ..shader = LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                cellColor.withValues(alpha: 0.6),
+                cellColor,
+              ],
+            ).createShader(cellRect);
+            
           canvas.drawRRect(rrect, capturedPaint);
 
           // Subtle inner border for depth
           Paint innerBorder = Paint()
-            ..color = Colors.white.withValues(alpha: 0.18)
+            ..color = Colors.white.withValues(alpha: 0.25)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1;
+            ..strokeWidth = 1.0;
           canvas.drawRRect(
               RRect.fromRectAndRadius(
                   cellRect.deflate(1.5), Radius.circular(radius - 1)),
