@@ -6,9 +6,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:bigblueblocks/services/notification_service.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() async {
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+
+  // Initialize notifications
+  await NotificationService().init();
+
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -28,14 +35,11 @@ const Color fontWhite = Colors.white;
 const List<Color> shapeColors = [
   Colors.transparent, // 0 - Empty
   Colors.white, // 1 - Hurdle
-  Color(0xFF00F0FF), // 2 - Cyan
-  Color(0xFFFFC900), // 3 - Yellow
-  Color(0xFFBC13FE), // 4 - Purple
-  Color(0xFFFF5E00), // 5 - Orange
-  Color(0xFF2E7DFF), // 6 - Blue
-  Color(0xFF00FF55), // 7 - Green
-  Color(0xFFFF003C), // 8 - Red
-  Color(0xFFFF33CC), // 9 - Pink
+  Color(0xFFFFC900), // 2 - Yellow
+  Color(0xFFFF5E00), // 3 - Orange
+  Color(0xFF2E7DFF), // 4 - Blue
+  Color(0xFF00FF55), // 5 - Green
+  Color(0xFFFF003C), // 6 - Red
 ];
 
 enum HapticType { light, medium, heavy, selection }
@@ -129,7 +133,7 @@ class ScorePopup {
 // ═══════════════════════════════════════════════════════
 
 class BigBlueBlocksApp extends StatelessWidget {
-  const BigBlueBlocksApp({Key? key}) : super(key: key);
+  const BigBlueBlocksApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -155,12 +159,14 @@ class BigBlueBlocksApp extends StatelessWidget {
 // ═══════════════════════════════════════════════════════
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({Key? key}) : super(key: key);
+  const GameScreen({super.key});
   @override
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+class _GameScreenState extends State<GameScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  int _demoRunId = 0;
   static const int gridSize = 8;
 
   // ── Core State ──
@@ -180,10 +186,29 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   List<GamePiece?> nextPieces = [null, null, null];
   int? selectedPieceIndex;
   Set<GameCoordinate> activeTrace = {};
-  bool _showTraceHint = true;
 
-  // ── Interactive Tutorial ──
-  int _tutorialStep = 0; // 0=off, 1=select piece, 2=tap cell, 3=drag trace, 4=done
+  Set<GameCoordinate> _clearingCells = {};
+  late AnimationController _clearController;
+  Set<GameCoordinate> _thudCells = {};
+  late AnimationController _thudController;
+  late AnimationController _dealController;
+
+  // ── True Interactive Tutorial & Hint System ──
+  int _tutorialStep =
+      0; // 0=off, 1=select piece, 2=trace on grid (combines old 2 & 3)
+  List<GameCoordinate>? _hintTrace;
+  Timer? _idleTimer;
+
+  bool _isAutoPlayingDemo = false;
+  Offset _handPos = const Offset(-100, -100);
+  bool _handVisible = false;
+  bool _handPressed = false;
+  Duration _handDuration = const Duration(milliseconds: 300);
+  Curve _handCurve = Curves.easeInOut;
+
+  final List<GlobalKey> _pieceKeys = [GlobalKey(), GlobalKey(), GlobalKey()];
+  final GlobalKey _boardKey = GlobalKey();
+  final GlobalKey _stackKey = GlobalKey();
 
   // ── Gamification ──
   int comboCount = 0;
@@ -196,23 +221,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // ── Settings ──
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
+  bool _notificationsEnabled = true;
+
+  Future<void> _updateDailyReminder(bool enabled) async {
+    if (enabled) {
+      bool granted = await NotificationService().requestPermissions();
+      if (granted) {
+        await NotificationService().scheduleDailyReminder(hour: 10, minute: 0);
+      } else {
+        if (mounted) {
+          setState(() {
+            _notificationsEnabled = false;
+          });
+          _saveSettings();
+        }
+      }
+    } else {
+      await NotificationService().cancelDailyReminder();
+    }
+  }
 
   /// Gated haptic and sound feedback.
   void _haptic(HapticType type) {
-    if (_soundEnabled) {
-      SystemSound.play(SystemSoundType.click);
-    }
-    if (!_vibrationEnabled) return;
-    switch (type) {
-      case HapticType.light:
-        HapticFeedback.lightImpact();
-      case HapticType.medium:
-        HapticFeedback.mediumImpact();
-      case HapticType.heavy:
-        HapticFeedback.heavyImpact();
-      case HapticType.selection:
-        HapticFeedback.selectionClick();
-    }
+    try {
+      if (_soundEnabled) {
+        SystemSound.play(SystemSoundType.click);
+      }
+      if (!_vibrationEnabled) return;
+      switch (type) {
+        case HapticType.light:
+          HapticFeedback.lightImpact();
+        case HapticType.medium:
+          HapticFeedback.mediumImpact();
+        case HapticType.heavy:
+          HapticFeedback.heavyImpact();
+        case HapticType.selection:
+          HapticFeedback.selectionClick();
+      }
+    } catch (_) {}
   }
 
   void _showSettings() {
@@ -262,7 +308,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         if (v) _haptic(HapticType.light);
                       },
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 8),
                     Divider(color: fontWhite.withValues(alpha: 0.1)),
                     TextButton(
                       onPressed: () {
@@ -293,124 +339,141 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       context: context,
       barrierColor: bgDarkBlue.withValues(alpha: 0.8),
       builder: (ctx) {
-        return Dialog(
-          backgroundColor: cardDarkBlue,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('MORE SETTINGS',
-                    style: TextStyle(
-                        color: fontWhite,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2)),
-                const SizedBox(height: 24),
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return Dialog(
+              backgroundColor: cardDarkBlue,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24)),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('MORE SETTINGS',
+                        style: TextStyle(
+                            color: fontWhite,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 2)),
+                    const SizedBox(height: 24),
 
-                // App Info
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: bgDarkBlue.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.grid_view_rounded,
-                          color: gameYellow, size: 28),
-                      const SizedBox(width: 12),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    // Notification Settings
+                    _settingsRow(
+                      icon: Icons.notifications_rounded,
+                      label: 'Daily Reminders',
+                      value: _notificationsEnabled,
+                      onChanged: (v) async {
+                        setDialogState(() => _notificationsEnabled = v);
+                        setState(() {});
+                        _saveSettings();
+                        await _updateDailyReminder(v);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(color: fontWhite.withValues(alpha: 0.1)),
+                    const SizedBox(height: 16),
+
+                    // App Info
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: bgDarkBlue.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text('BigBlueBlocks',
-                              style: TextStyle(
-                                  color: fontWhite,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16)),
-                          Text('Version 1.0.0',
-                              style: TextStyle(
-                                  color: Colors.white54, fontSize: 12)),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Text('BigBlueBlocks',
+                                  style: TextStyle(
+                                      color: fontWhite,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
+                              Text('Version 1.1.0',
+                                  style: TextStyle(
+                                      color: Colors.white54, fontSize: 12)),
+                            ],
+                          ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
+                    ),
+                    const SizedBox(height: 24),
 
-                // Links
-                _linkRow(
-                  icon: Icons.mail_rounded,
-                  label: 'Contact Us',
-                  onTap: () {
-                    final Uri emailLaunchUri = Uri(
-                      scheme: 'mailto',
-                      path: 'support@bigblueblocks.app',
-                      queryParameters: {
-                        'subject': 'Support Request - Big Blue Blocks'
+                    // Links
+                    _linkRow(
+                      icon: Icons.mail_rounded,
+                      label: 'Contact Us',
+                      onTap: () {
+                        final Uri emailLaunchUri = Uri(
+                          scheme: 'mailto',
+                          path: 'support@bigblueblocks.app',
+                          queryParameters: {
+                            'subject': 'Support Request - Big Blue Blocks'
+                          },
+                        );
+                        launchUrl(emailLaunchUri);
                       },
-                    );
-                    launchUrl(emailLaunchUri);
-                  },
-                ),
-                _linkRow(
-                  icon: Icons.share_rounded,
-                  label: 'Share with friends',
-                  onTap: () {
-                    final size = MediaQuery.of(context).size;
-                    Share.share(
-                      'Check out Big Blue Blocks! The ultimate puzzle experience for your mind. https://bigblueblocks.app',
-                      sharePositionOrigin: Rect.fromLTWH(
-                          0, size.height / 2, size.width, size.height / 2),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
+                    ),
+                    _linkRow(
+                      icon: Icons.share_rounded,
+                      label: 'Share with friends',
+                      onTap: () {
+                        final size = MediaQuery.of(context).size;
+                        Share.share(
+                          'Check out Big Blue Blocks! The ultimate puzzle experience for your mind. https://bigblueblocks.app',
+                          sharePositionOrigin: Rect.fromLTWH(
+                              0, size.height / 2, size.width, size.height / 2),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
 
+                    const SizedBox(height: 12),
+                    Divider(color: fontWhite.withValues(alpha: 0.1)),
+                    const SizedBox(height: 12),
 
+                    _linkRow(
+                      icon: Icons.description_rounded,
+                      label: 'Terms of Service',
+                      onTap: () => launchUrl(
+                          Uri.parse('https://bigblueblocks.app/terms.html')),
+                    ),
+                    _linkRow(
+                      icon: Icons.privacy_tip_rounded,
+                      label: 'Privacy Policy',
+                      onTap: () => launchUrl(
+                          Uri.parse('https://bigblueblocks.app/privacy.html')),
+                    ),
+                    _linkRow(
+                      icon: Icons.info_rounded,
+                      label: 'About Us',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        showAboutDialog(
+                          context: context,
+                          applicationName: 'BigBlueBlocks',
+                          applicationVersion: '1.1.0',
+                          applicationLegalese: '© 2026 BigBlueBlocks',
+                        );
+                      },
+                    ),
 
-                const SizedBox(height: 12),
-                Divider(color: fontWhite.withValues(alpha: 0.1)),
-                const SizedBox(height: 12),
-
-                _linkRow(
-                  icon: Icons.description_rounded,
-                  label: 'Terms of Service',
-                  onTap: () => launchUrl(
-                      Uri.parse('https://bigblueblocks.app/terms.html')),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Close',
+                          style: TextStyle(
+                              color: gameYellow, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
-                _linkRow(
-                  icon: Icons.privacy_tip_rounded,
-                  label: 'Privacy Policy',
-                  onTap: () => launchUrl(
-                      Uri.parse('https://bigblueblocks.app/privacy.html')),
-                ),
-                _linkRow(
-                  icon: Icons.info_rounded,
-                  label: 'About Us',
-                  onTap: () {
-                    showAboutDialog(
-                      context: context,
-                      applicationName: 'BigBlueBlocks',
-                      applicationVersion: '1.0.0',
-                      applicationLegalese: '© 2026 BigBlueBlocks',
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 16),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close',
-                      style: TextStyle(
-                          color: gameYellow, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -447,6 +510,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     required String label,
     required bool value,
     required ValueChanged<bool> onChanged,
+    bool isButton = false,
   }) {
     return Row(
       children: [
@@ -457,16 +521,45 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               style: const TextStyle(
                   color: fontWhite, fontSize: 14, fontWeight: FontWeight.w600)),
         ),
-        Switch(
-          value: value,
-          onChanged: onChanged,
-          activeThumbColor: gameYellow,
-          activeTrackColor: gameYellow.withValues(alpha: 0.3),
-          inactiveThumbColor: fontWhite.withValues(alpha: 0.4),
-          inactiveTrackColor: fontWhite.withValues(alpha: 0.1),
-        ),
+        if (isButton)
+          IconButton(
+            onPressed: () => onChanged(!value),
+            icon: const Icon(Icons.send_rounded, color: gameYellow),
+          )
+        else
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: gameYellow,
+            activeTrackColor: gameYellow.withValues(alpha: 0.3),
+            inactiveThumbColor: fontWhite.withValues(alpha: 0.4),
+            inactiveTrackColor: fontWhite.withValues(alpha: 0.1),
+          ),
       ],
     );
+  }
+
+  Offset _globalToStack(Offset global) {
+    RenderBox? stackBox =
+        _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (stackBox == null) return global;
+    return stackBox.globalToLocal(global);
+  }
+
+  Offset _getPieceCenter(int index) {
+    RenderBox? box =
+        _pieceKeys[index].currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return Offset.zero;
+    return _globalToStack(box.localToGlobal(box.size.center(Offset.zero)));
+  }
+
+  Offset _getBoardCellCenter(int x, int y) {
+    RenderBox? box = _boardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return Offset.zero;
+    Offset topLeft = _globalToStack(box.localToGlobal(Offset.zero));
+    double cellSize = box.size.width / gridSize;
+    return Offset(topLeft.dx + x * cellSize + cellSize / 2,
+        topLeft.dy + y * cellSize + cellSize / 2);
   }
 
   void _showTutorial() {
@@ -474,8 +567,134 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _tutorialStep = 1;
       _requiresLift = false;
       activeTrace.clear();
+      _hintTrace = null;
       selectedPieceIndex = null;
     });
+    _startDemoLoop();
+  }
+
+  void _startDemoLoop() async {
+    if (_isAutoPlayingDemo) return;
+    _isAutoPlayingDemo = true;
+    _demoRunId = DateTime.now().millisecondsSinceEpoch;
+    final int currentRun = _demoRunId;
+
+    bool isActive() =>
+        mounted &&
+        _isAutoPlayingDemo &&
+        _tutorialStep == 1 &&
+        _demoRunId == currentRun;
+
+    try {
+      while (isActive()) {
+        if (_pieceKeys[0].currentContext == null ||
+            _boardKey.currentContext == null) {
+          await Future.delayed(const Duration(milliseconds: 200));
+          continue;
+        }
+
+        int targetPiece = availablePieces.indexWhere((p) => p != null);
+        if (targetPiece == -1) break;
+
+        RenderBox? targetBox = _pieceKeys[targetPiece]
+            .currentContext
+            ?.findRenderObject() as RenderBox?;
+        double hoverOffset =
+            targetBox != null ? targetBox.size.height * 0.4 : 40.0;
+
+        // 1. Hand Appears over shape
+        setState(() {
+          selectedPieceIndex = null;
+          _handDuration = const Duration(milliseconds: 0);
+          _handPos = _getPieceCenter(targetPiece) - Offset(0, hoverOffset);
+          _handVisible = true;
+          _handPressed = false;
+        });
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (!isActive()) break;
+
+        // 2. Hand moves down to press it
+        setState(() {
+          _handDuration = const Duration(milliseconds: 300);
+          _handCurve = Curves.easeOut;
+          _handPos = _getPieceCenter(targetPiece);
+          _handPressed = true;
+        });
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (!isActive()) break;
+
+        if (mounted) {
+          setState(() {
+            selectedPieceIndex = targetPiece;
+            _hintTrace = _getHintTraceForPiece(targetPiece);
+          });
+          _haptic(HapticType.selection);
+        }
+
+        await Future.delayed(const Duration(milliseconds: 400));
+        if (!isActive()) break;
+
+        // 3. Move hand to grid start
+        final trace = _hintTrace;
+        if (trace != null && trace.isNotEmpty) {
+          setState(() {
+            _handPressed = false;
+            _handDuration = const Duration(milliseconds: 600);
+            _handCurve = Curves.easeInOut;
+            _handPos = _getBoardCellCenter(trace.first.x, trace.first.y);
+          });
+          await Future.delayed(const Duration(milliseconds: 600));
+          if (!isActive()) break;
+
+          setState(() {
+            _handPressed = true;
+            playerCoord = trace.first;
+            activeTrace.clear();
+            activeTrace.add(trace.first);
+          });
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          // Sweep across trace
+          for (int i = 1; i < trace.length; i++) {
+            setState(() {
+              _handDuration = const Duration(milliseconds: 200);
+              _handCurve = Curves.linear;
+              _handPos = _getBoardCellCenter(trace[i].x, trace[i].y);
+            });
+
+            await Future.delayed(const Duration(milliseconds: 180));
+            if (!isActive()) break;
+
+            setState(() {
+              playerCoord = trace[i];
+              activeTrace.add(trace[i]);
+            });
+            await Future.delayed(const Duration(milliseconds: 20));
+          }
+          await Future.delayed(const Duration(milliseconds: 600));
+        }
+
+        // 4. Fade & reset
+        if (!isActive()) break;
+        setState(() {
+          _handVisible = false;
+          _handPressed = false;
+          selectedPieceIndex = null;
+          _hintTrace = null;
+          activeTrace.clear();
+        });
+
+        await Future.delayed(const Duration(milliseconds: 1000));
+      }
+    } finally {
+      if (mounted && _demoRunId == currentRun) {
+        setState(() {
+          _isAutoPlayingDemo = false;
+          _handVisible = false;
+          _handPressed = false;
+        });
+      }
+    }
   }
 
   // ── Visual Feedback ──
@@ -486,30 +705,41 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // ── Animations ──
   late AnimationController _pulseController;
   late AnimationController _shakeController;
+  late AnimationController _fingerController;
 
   // ═══════════════════════════════════════════════════
   //  LIFECYCLE
   // ═══════════════════════════════════════════════════
 
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
-    setState(() {
-      highScore = prefs.getInt('highScore') ?? 0;
-      _soundEnabled = prefs.getBool('soundEnabled') ?? true;
-      _vibrationEnabled = prefs.getBool('vibrationEnabled') ?? true;
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      bool isFirstLaunch = prefs.getBool('isFirstLaunch') ?? true;
 
-    if (isFirstLaunch) {
-      await prefs.setBool('isFirstLaunch', false);
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          setState(() {
-            _tutorialStep = 1;
-            selectedPieceIndex = null;
-          });
-        }
+      // Ensure we don't call setState if unmounted
+      if (!mounted) return;
+
+      setState(() {
+        highScore = prefs.getInt('highScore') ?? 0;
+        _soundEnabled = prefs.getBool('soundEnabled') ?? true;
+        _vibrationEnabled = prefs.getBool('vibrationEnabled') ?? true;
+        _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
       });
+
+      // Ensure reminder state matches preference
+      await _updateDailyReminder(_notificationsEnabled);
+
+      if (isFirstLaunch) {
+        await prefs.setBool('isFirstLaunch', false);
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) _showTutorial();
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading settings: $e');
+    } finally {
+      // Always remove splash screen after attempt
+      FlutterNativeSplash.remove();
     }
   }
 
@@ -517,6 +747,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('soundEnabled', _soundEnabled);
     await prefs.setBool('vibrationEnabled', _vibrationEnabled);
+    await prefs.setBool('notificationsEnabled', _notificationsEnabled);
   }
 
   Future<void> _saveHighScore(int score) async {
@@ -527,7 +758,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _loadSettings();
+    WidgetsBinding.instance.addObserver(this);
+    _clearController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    )..addListener(() {
+        setState(() {});
+      });
+    _thudController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 120),
+    )..addListener(() {
+        setState(() {});
+      });
+    _dealController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+      value: 1.0,
+    );
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -538,15 +786,67 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 500),
     );
 
+    _fingerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+
     initGame();
+
+    // Schedule settings load after first frame to ensure bindings are ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSettings();
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _clearController.dispose();
+    _thudController.dispose();
+    _dealController.dispose();
     _pulseController.dispose();
     _shakeController.dispose();
+    _fingerController.dispose();
     _comboTimer?.cancel();
+    _idleTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      NotificationService().dismissAllNotifications();
+    }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (_tutorialStep == 1 && _isAutoPlayingDemo) {
+        setState(() {
+          _tutorialStep = 0;
+          _isAutoPlayingDemo = false;
+          _handVisible = false;
+          activeTrace.clear();
+        });
+      }
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (_tutorialStep == 1 && _isAutoPlayingDemo) {
+      if (mounted) {
+        setState(() {
+          _isAutoPlayingDemo = false;
+          _tutorialStep = 0;
+          _handVisible = false;
+          activeTrace.clear();
+        });
+      }
+
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) _showTutorial();
+      });
+    }
   }
 
   // ═══════════════════════════════════════════════════
@@ -638,7 +938,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   List<GamePiece?> _createPieceSet() {
     const int minColor = 2;
-    const int maxColor = 9;
+    const int maxColor = 6;
     Random rnd = Random();
     List<GamePiece?> pieces = [];
     final pool = _piecePoolForLevel(level);
@@ -662,12 +962,77 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     return pieces;
   }
 
+  List<GameCoordinate>? _getHintTraceForPiece(int index) {
+    var piece = availablePieces[index];
+    if (piece == null) return null;
+    List<GameCoordinate> pShape = piece.shape;
+
+    for (int ox = 0; ox < gridSize; ox++) {
+      for (int oy = 0; oy < gridSize; oy++) {
+        bool fits = true;
+        for (var c in pShape) {
+          int px = c.x + ox;
+          int py = c.y + oy;
+          if (px < 0 ||
+              px >= gridSize ||
+              py < 0 ||
+              py >= gridSize ||
+              grid[px][py] != 0) {
+            fits = false;
+            break;
+          }
+        }
+        if (fits) {
+          return pShape.map((c) => GameCoordinate(ox + c.x, oy + c.y)).toList();
+        }
+      }
+    }
+    return null;
+  }
+
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    if (_hintTrace != null && _tutorialStep == 0) {
+      if (mounted) setState(() => _hintTrace = null);
+    }
+    if (gameState != 'PLAY') return;
+    _idleTimer = Timer(const Duration(seconds: 10), () {
+      if (!mounted) return;
+      if (_tutorialStep > 0) return; // Tutorial handles its own trace
+
+      if (selectedPieceIndex == null) {
+        for (int i = 0; i < 3; i++) {
+          if (availablePieces[i] != null) {
+            setState(() {
+              selectedPieceIndex = i;
+              _hintTrace = _getHintTraceForPiece(i);
+            });
+            break;
+          }
+        }
+      } else {
+        setState(() {
+          _hintTrace = _getHintTraceForPiece(selectedPieceIndex!);
+        });
+      }
+    });
+  }
+
   void selectPiece(int index) {
     if (availablePieces[index] == null) return;
     setState(() {
       selectedPieceIndex = index;
       activeTrace.clear();
-      if (_tutorialStep == 1 || _tutorialStep == 3) _tutorialStep = 2;
+      if (_tutorialStep == 1) {
+        _tutorialStep = 2;
+        _isAutoPlayingDemo = false;
+        _handVisible = false;
+      }
+      if (_tutorialStep == 2) {
+        _hintTrace = _getHintTraceForPiece(index);
+      } else {
+        _resetIdleTimer();
+      }
     });
   }
 
@@ -785,7 +1150,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     nextPieces = _createPieceSet();
     selectedPieceIndex = 0;
     activeTrace.clear();
-    _showTraceHint = true;
+    _resetIdleTimer();
 
     setState(() {
       gameState = 'PLAY';
@@ -851,7 +1216,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         capturedCount--;
         cellPoints += 10;
       }
-      grid[c.x][c.y] = 0;
+    }
+
+    if (totalLines > 0) {
+      setState(() {
+        _clearingCells = Set.from(cellsToClear);
+      });
+      _clearController.forward(from: 0.0).then((_) {
+        if (mounted) {
+          setState(() {
+            for (var c in _clearingCells) {
+              grid[c.x][c.y] = 0;
+            }
+            _clearingCells.clear();
+            _placeHurdles();
+            totalCapturable = gridSize * gridSize - hurdleCount;
+          });
+        }
+      });
     }
 
     int lineBonus = 150 * totalLines;
@@ -861,11 +1243,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     gameScore += totalBonus;
     linesCleared += totalLines;
 
-    _placeHurdles();
-    totalCapturable = gridSize * gridSize - hurdleCount;
+    if (totalLines == 0) {
+      _placeHurdles();
+      totalCapturable = gridSize * gridSize - hurdleCount;
+    }
 
     // Queue score popup (Timer removal can call setState safely later)
-    _queueScorePopup("+$totalBonus", gameYellow);
+    _queueScorePopup("+$totalBonus", gameYellow, isLarge: totalLines > 0);
 
     _haptic(HapticType.heavy);
     return totalLines;
@@ -876,7 +1260,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void _checkPerfectClear() {
     for (int x = 0; x < gridSize; x++) {
       for (int y = 0; y < gridSize; y++) {
-        if (grid[x][y] >= 2) return;
+        if (grid[x][y] >= 2 && !_clearingCells.contains(GameCoordinate(x, y))) {
+          return;
+        }
       }
     }
     gameScore += 1000;
@@ -905,10 +1291,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _comboText = text;
     _comboTimer?.cancel();
     _comboTimer = Timer(const Duration(milliseconds: 1800), () {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _comboText = null;
         });
+      }
     });
   }
 
@@ -934,6 +1321,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
     // ── Place cells on grid ──
     int placementPoints = 0;
+    _thudCells = Set.from(activeTrace);
     for (var c in activeTrace) {
       if (grid[c.x][c.y] == 0) {
         grid[c.x][c.y] = currentPiece.colorIndex;
@@ -941,6 +1329,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         placementPoints += 10;
       }
     }
+    _thudController.forward(from: 0.0).then((_) {
+      if (mounted) {
+        setState(() {
+          _thudCells.clear();
+        });
+      }
+    });
 
     // ── Streak bonus ──
     streakCount++;
@@ -964,25 +1359,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     availablePieces[selectedPieceIndex!] = null;
     selectedPieceIndex = null;
     activeTrace.clear();
-    _showTraceHint = false;
 
     // ── Advance tutorial on first successful placement ──
-    if (_tutorialStep == 3) {
-      _tutorialStep = 0; // Hide the tracing instruction immediately
-      Future.delayed(const Duration(milliseconds: 600), () {
-        if (mounted) {
-          setState(() => _tutorialStep = 4);
-          Future.delayed(const Duration(milliseconds: 3000), () {
-            if (mounted && _tutorialStep == 4) setState(() => _tutorialStep = 0);
-          });
-        }
-      });
+    if (_tutorialStep == 2) {
+      _tutorialStep = 0;
+      _hintTrace = null;
+      _resetIdleTimer();
     }
 
     // ── Refill from next set if all used ──
     if (availablePieces.every((p) => p == null)) {
       availablePieces = List<GamePiece?>.from(nextPieces);
       nextPieces = _createPieceSet();
+      _dealController.forward(from: 0.0);
     }
 
     // ── Auto-select next available piece ──
@@ -1001,11 +1390,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         highScore = gameScore;
         isNewHighScore = true;
         _saveHighScore(highScore);
+
+        // Notify player of new record
+        NotificationService().showInstantNotification(
+          title: '🏆 New Record!',
+          body:
+              'Fantastic! You just set a new high score of $highScore! Keep up the great work.',
+          useBigText: true,
+        );
       }
       _shakeController.forward(from: 0);
     } else {
       _requiresLift = true;
     }
+    _resetIdleTimer();
   }
 
   void _executeMoveTo(int newX, int newY) {
@@ -1034,6 +1432,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (!isValidTraceShape(simulatedTrace, currentPiece.shape)) {
       _haptic(HapticType.selection);
       _shakeController.forward(from: 0);
+      if (_tutorialStep == 2) {
+        activeTrace.clear(); // Safe-fail, let them try again
+      }
       return;
     }
 
@@ -1052,51 +1453,57 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   Widget _buildStatCard(String label, String value, GameLayout layout,
       {IconData? icon, bool highlight = false}) {
-    return Container(
-      width: layout.statCardWidth,
-      padding:
-          EdgeInsets.symmetric(vertical: layout.statCardPadV, horizontal: 4),
-      decoration: BoxDecoration(
-        color: highlight ? gameYellow.withValues(alpha: 0.15) : cardDarkBlue,
-        borderRadius: BorderRadius.circular(12),
-        border: highlight
-            ? Border.all(color: gameYellow.withValues(alpha: 0.4), width: 1)
-            : null,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, color: gameYellow, size: layout.fontSm),
-                const SizedBox(width: 2),
+    return TweenAnimationBuilder<double>(
+      key: ValueKey('$label-$value'),
+      duration: Duration(milliseconds: highlight ? 400 : 200),
+      tween: Tween(begin: highlight ? 1.4 : 1.15, end: 1.0),
+      curve: highlight ? Curves.elasticOut : Curves.easeOut,
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: Container(
+        width: layout.statCardWidth,
+        padding:
+            EdgeInsets.symmetric(vertical: layout.statCardPadV, horizontal: 4),
+        decoration: const BoxDecoration(
+          color: Colors.transparent,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, color: gameYellow, size: layout.fontSm),
+                  const SizedBox(width: 2),
+                ],
+                Flexible(
+                  child: Text(label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: highlight
+                            ? gameYellow.withValues(alpha: 0.9)
+                            : fontWhite.withValues(alpha: 0.7),
+                        fontSize: layout.fontSm * 1.2,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      )),
+                ),
               ],
-              Flexible(
-                child: Text(label,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: fontWhite.withValues(alpha: 0.7),
-                      fontSize: layout.fontSm * 0.85,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    )),
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(value,
-                style: TextStyle(
-                  color: highlight ? gameYellow : fontWhite,
-                  fontSize: layout.fontMd,
-                  fontWeight: FontWeight.bold,
-                )),
-          ),
-        ],
+            ),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(value,
+                  style: TextStyle(
+                    color: highlight ? gameYellow : fontWhite,
+                    fontSize: layout.fontMd * 1.5,
+                    fontWeight: FontWeight.bold,
+                  )),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1111,7 +1518,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         return GestureDetector(
           onPanDown: (details) {
             if (gameState != 'PLAY') return;
+            if (_tutorialStep == 1) {
+              setState(() {
+                _tutorialStep = 2;
+                _isAutoPlayingDemo = false;
+                _handVisible = false;
+              });
+            }
             _requiresLift = false;
+            _resetIdleTimer();
 
             double cellSize = constraints.maxWidth / gridSize;
             int tappedX = (details.localPosition.dx / cellSize).floor();
@@ -1129,7 +1544,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 if (selectedPieceIndex != null) {
                   activeTrace.clear();
                   activeTrace.add(tappedPos);
-                  if (_tutorialStep == 2) _tutorialStep = 3;
                   // Immediately complete if piece is 1 cell (tap = place)
                   _tryCompletePlacement();
                 }
@@ -1139,6 +1553,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           },
           onPanUpdate: (details) {
             if (gameState != 'PLAY' || _requiresLift) return;
+            _resetIdleTimer();
 
             double cellSize = constraints.maxWidth / gridSize;
             int hoverX = (details.localPosition.dx / cellSize).floor();
@@ -1155,6 +1570,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           },
           behavior: HitTestBehavior.opaque,
           child: CustomPaint(
+            key: _boardKey,
             size: Size(constraints.maxWidth, constraints.maxHeight),
             painter: GamePainter(
               gridSize,
@@ -1165,6 +1581,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       availablePieces[selectedPieceIndex!] != null
                   ? availablePieces[selectedPieceIndex!]!.colorIndex
                   : 0,
+              _hintTrace,
+              _fingerController.value,
+              _clearingCells,
+              _clearController.value,
+              _thudCells,
+              _thudController.value,
             ),
           ),
         );
@@ -1185,35 +1607,43 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           bool isSelected = selectedPieceIndex == index;
 
           return GestureDetector(
-            onTap: () => selectPiece(index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: layout.pieceSlotSize,
-              height: layout.pieceSlotSize,
-              margin: EdgeInsets.symmetric(horizontal: layout.spacingSm),
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: cardDarkBlue,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isSelected ? gameYellow : Colors.transparent,
-                  width: 2,
+            onPanDown: (_) => selectPiece(index),
+            child: AnimatedBuilder(
+              animation: _dealController,
+              builder: (context, child) {
+                double scl = piece != null
+                    ? Curves.elasticOut
+                        .transform(_dealController.value.clamp(0.0, 1.0))
+                    : 1.0;
+                return Transform.scale(
+                  scale: scl,
+                  child: child,
+                );
+              },
+              child: AnimatedContainer(
+                key: _pieceKeys[index],
+                duration: const Duration(milliseconds: 88),
+                width: layout.pieceSlotSize,
+                height: layout.pieceSlotSize,
+                margin: EdgeInsets.symmetric(horizontal: layout.spacingSm),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: cardDarkBlue,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isSelected ? gameYellow : Colors.transparent,
+                    width: 2,
+                  ),
                 ),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                            color: gameYellow.withValues(alpha: 0.3),
-                            blurRadius: 10)
-                      ]
-                    : null,
-              ),
-              child: piece == null
-                  ? null
-                  : RepaintBoundary(
-                      child: CustomPaint(
-                        painter: ShapeHudPainter(piece.shape, piece.colorIndex),
+                child: piece == null
+                    ? null
+                    : RepaintBoundary(
+                        child: CustomPaint(
+                          painter:
+                              ShapeHudPainter(piece.shape, piece.colorIndex),
+                        ),
                       ),
-                    ),
+              ),
             ),
           );
         }),
@@ -1269,27 +1699,38 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     return IgnorePointer(
       child: TweenAnimationBuilder<double>(
         key: popup.key,
-        duration: const Duration(milliseconds: 1200),
+        duration: const Duration(milliseconds: 1000),
         tween: Tween(begin: 0.0, end: 1.0),
         builder: (context, progress, _) {
+          double scl = 0.8 + (progress * 0.4); // starts smaller, grows
           return Center(
             child: Transform.translate(
-              offset: Offset(0, -progress * 60),
-              child: Opacity(
-                opacity: (1.0 - progress).clamp(0.0, 1.0),
-                child: Text(
-                  popup.text,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: popup.color,
-                    fontSize: popup.isLarge ? 20 : 15,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                    shadows: [
-                      Shadow(
-                          color: popup.color.withValues(alpha: 0.6),
-                          blurRadius: 10),
-                    ],
+              offset: Offset(0, -progress * 100), // floats higher
+              child: Transform.scale(
+                scale: scl,
+                child: Opacity(
+                  opacity: (1.0 - (progress * progress)).clamp(0.0, 1.0),
+                  child: Text(
+                    popup.text,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: popup.color,
+                      fontSize: popup.isLarge ? 38.0 : 30.0,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2.0,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.8),
+                          offset: const Offset(0, 2),
+                          blurRadius: 4,
+                        ),
+                        Shadow(
+                          color: popup.color.withValues(alpha: 0.4),
+                          offset: const Offset(0, 0),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1318,6 +1759,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       backgroundColor: bgDarkBlue,
       body: SafeArea(
         child: Stack(
+          key: _stackKey,
           children: [
             // ── Main game column ──
             Column(
@@ -1326,20 +1768,64 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: layout.spacingSm),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      if (highScore > 0)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.emoji_events,
+                                color: gameYellow, size: layout.fontMd * 1.8),
+                            const SizedBox(width: 8),
+                            Text(
+                              "$highScore",
+                              style: TextStyle(
+                                color: gameYellow,
+                                fontSize: layout.fontMd,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            if (_tutorialStep > 0) const SizedBox(width: 12),
+                          ],
+                        ),
+                      if (_tutorialStep > 0)
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _tutorialStep = 0;
+                              _hintTrace = null;
+                              _isAutoPlayingDemo = false;
+                              _handVisible = false;
+                              selectedPieceIndex = null;
+                              activeTrace.clear();
+                              _resetIdleTimer();
+                            });
+                          },
+                          child: Text("SKIP",
+                              style: TextStyle(
+                                  color: fontWhite.withValues(alpha: 0.5),
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      const Spacer(),
                       GestureDetector(
-                        onTap: _showTutorial,
-                        child: Icon(Icons.help_outline_rounded,
-                            color: fontWhite.withValues(alpha: 0.4),
-                            size: layout.fontMd * 1.8),
+                        behavior: HitTestBehavior.opaque,
+                        onTapDown: (_) => _showTutorial(),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(Icons.help_outline_rounded,
+                              color: fontWhite.withValues(alpha: 0.6),
+                              size: layout.fontMd * 1.4),
+                        ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 3),
                       GestureDetector(
-                        onTap: _showSettings,
-                        child: Icon(Icons.settings_rounded,
-                            color: fontWhite.withValues(alpha: 0.4),
-                            size: layout.fontMd * 1.8),
+                        behavior: HitTestBehavior.opaque,
+                        onTapDown: (_) => _showSettings(),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(Icons.settings_rounded,
+                              color: gameYellow, size: layout.fontMd * 1.8),
+                        ),
                       ),
                     ],
                   ),
@@ -1356,9 +1842,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     if (comboCount > 1)
                       _buildStatCard("COMBO", "×$comboCount", layout,
                           highlight: true),
-                    if (highScore > 0)
-                      _buildStatCard("BEST", "$highScore", layout,
-                          icon: Icons.emoji_events),
                   ],
                 ),
 
@@ -1367,12 +1850,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 // ── Board ──
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: layout.spacingSm),
+                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
                     child: Center(
                       child: AspectRatio(
                         aspectRatio: 1,
                         child: AnimatedBuilder(
-                          animation: _shakeController,
+                          animation: Listenable.merge(
+                              [_shakeController, _fingerController]),
                           builder: (context, child) {
                             double shake =
                                 sin(_shakeController.value * pi * 6) *
@@ -1388,21 +1872,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                               color: bgDarkBlue,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color:
-                                    comboCount > 1 ? gameYellow : fontWhite,
+                                color: comboCount > 1 ? gameYellow : fontWhite,
                                 width: comboCount > 1 ? 3.0 : 2.0,
                               ),
-                              boxShadow: comboCount > 1
-                                  ? [
-                                      BoxShadow(
-                                        color: gameYellow.withValues(
-                                            alpha: (0.2 + comboCount * 0.08)
-                                                .clamp(0.0, 0.6)),
-                                        blurRadius: 10.0 + comboCount * 3.0,
-                                        spreadRadius: 1,
-                                      ),
-                                    ]
-                                  : null,
                             ),
                             padding: const EdgeInsets.all(3.0),
                             child: ClipRRect(
@@ -1420,44 +1892,31 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                   if (_comboText != null)
                                     IgnorePointer(
                                       child: Center(
-                                        child:
-                                            TweenAnimationBuilder<double>(
+                                        child: TweenAnimationBuilder<double>(
                                           key: ValueKey(_comboText),
-                                          duration: const Duration(
-                                              milliseconds: 400),
-                                          tween:
-                                              Tween(begin: 0.5, end: 1.0),
+                                          duration:
+                                              const Duration(milliseconds: 400),
+                                          tween: Tween(begin: 0.5, end: 1.0),
                                           curve: Curves.elasticOut,
                                           builder: (context, scale, child) {
                                             return Transform.scale(
                                                 scale: scale, child: child);
                                           },
                                           child: Container(
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 20,
-                                                    vertical: 10),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 20, vertical: 10),
                                             decoration: BoxDecoration(
                                               color: bgDarkBlue.withValues(
                                                   alpha: 0.85),
                                               borderRadius:
                                                   BorderRadius.circular(16),
                                               border: Border.all(
-                                                  color: gameYellow,
-                                                  width: 2),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                    color: gameYellow
-                                                        .withValues(
-                                                            alpha: 0.4),
-                                                    blurRadius: 20),
-                                              ],
+                                                  color: gameYellow, width: 2),
                                             ),
                                             child: Text(_comboText!,
                                                 style: TextStyle(
                                                   color: gameYellow,
-                                                  fontSize:
-                                                      layout.fontLg * 0.9,
+                                                  fontSize: layout.fontLg * 0.9,
                                                   fontWeight: FontWeight.bold,
                                                   letterSpacing: 2,
                                                 )),
@@ -1469,91 +1928,112 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                   // Game over overlay
                                   if (gameState == 'STUCK' ||
                                       gameState == 'END')
-                                    Container(
-                                      color:
-                                          bgDarkBlue.withValues(alpha: 0.9),
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            if (isNewHighScore) ...[
-                                              const Icon(Icons.stars,
-                                                  color: gameYellow,
-                                                  size: 56),
+                                    TweenAnimationBuilder<double>(
+                                      key: const ValueKey('game_over_fade'),
+                                      duration:
+                                          const Duration(milliseconds: 400),
+                                      tween: Tween(begin: 0.0, end: 1.0),
+                                      curve: Curves.easeOut,
+                                      builder: (context, opacity, child) {
+                                        return Opacity(
+                                            opacity: opacity, child: child);
+                                      },
+                                      child: Container(
+                                        color:
+                                            bgDarkBlue.withValues(alpha: 0.9),
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              if (isNewHighScore) ...[
+                                                const Icon(Icons.stars,
+                                                    color: gameYellow,
+                                                    size: 56),
+                                                SizedBox(
+                                                    height: layout.spacingMd),
+                                                Text("NEW RECORD!",
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                        color: gameYellow,
+                                                        fontSize: layout.fontXl,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        letterSpacing: 2)),
+                                              ] else ...[
+                                                Text(
+                                                    gameState == 'STUCK'
+                                                        ? "TRAPPED!"
+                                                        : "GAME OVER",
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                        color:
+                                                            gameState == 'STUCK'
+                                                                ? gameYellow
+                                                                : fontWhite,
+                                                        fontSize: layout.fontXl,
+                                                        fontWeight:
+                                                            FontWeight.bold)),
+                                              ],
+                                              SizedBox(
+                                                  height: layout.spacingSm),
+                                              Text("FINAL SCORE: $score",
+                                                  style: TextStyle(
+                                                      color: fontWhite,
+                                                      fontSize: layout.fontMd,
+                                                      letterSpacing: 1.5)),
+                                              if (streakCount > 0) ...[
+                                                SizedBox(
+                                                    height: layout.spacingXs),
+                                                Text("STREAK: $streakCount",
+                                                    style: TextStyle(
+                                                        color: fontWhite
+                                                            .withValues(
+                                                                alpha: 0.6),
+                                                        fontSize: layout.fontSm,
+                                                        letterSpacing: 1)),
+                                              ],
+                                              if (linesCleared > 0) ...[
+                                                SizedBox(
+                                                    height: layout.spacingXs),
+                                                Text(
+                                                    "LINES: $linesCleared  •  LEVEL: $level",
+                                                    style: TextStyle(
+                                                        color: fontWhite
+                                                            .withValues(
+                                                                alpha: 0.5),
+                                                        fontSize: layout.fontSm,
+                                                        letterSpacing: 1)),
+                                              ],
                                               SizedBox(
                                                   height: layout.spacingMd),
-                                              Text("NEW RECORD!",
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                      color: gameYellow,
-                                                      fontSize:
-                                                          layout.fontXl,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      letterSpacing: 2)),
-                                            ] else ...[
-                                              Text(
-                                                  gameState == 'STUCK'
-                                                      ? "TRAPPED!"
-                                                      : "GAME OVER",
-                                                  textAlign: TextAlign.center,
-                                                  style: TextStyle(
-                                                      color:
-                                                          gameState == 'STUCK'
-                                                              ? gameYellow
-                                                              : fontWhite,
-                                                      fontSize:
-                                                          layout.fontXl,
-                                                      fontWeight:
-                                                          FontWeight.bold)),
-                                            ],
-                                            SizedBox(
-                                                height: layout.spacingSm),
-                                            Text("FINAL SCORE: $score",
-                                                style: TextStyle(
-                                                    color: fontWhite,
-                                                    fontSize: layout.fontMd,
-                                                    letterSpacing: 1.5)),
-                                            if (streakCount > 0) ...[
-                                              SizedBox(
-                                                  height: layout.spacingXs),
-                                              Text("STREAK: $streakCount",
-                                                  style: TextStyle(
-                                                      color: fontWhite
-                                                          .withValues(
-                                                              alpha: 0.6),
-                                                      fontSize:
-                                                          layout.fontSm,
-                                                      letterSpacing: 1)),
-                                            ],
-                                            if (linesCleared > 0) ...[
-                                              SizedBox(
-                                                  height: layout.spacingXs),
-                                              Text(
-                                                  "LINES: $linesCleared  •  LEVEL: $level",
-                                                  style: TextStyle(
-                                                      color: fontWhite
-                                                          .withValues(
-                                                              alpha: 0.5),
-                                                      fontSize:
-                                                          layout.fontSm,
-                                                      letterSpacing: 1)),
-                                            ],
-                                            SizedBox(height: layout.spacingMd),
-                                            ElevatedButton(
-                                              onPressed: () {
-                                                _haptic(HapticType.light);
-                                                initGame();
-                                              },
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: gameYellow,
-                                                padding: EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+                                              GestureDetector(
+                                                onPanDown: (_) {
+                                                  _haptic(HapticType.light);
+                                                  initGame();
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 32,
+                                                      vertical: 16),
+                                                  decoration: BoxDecoration(
+                                                    color: gameYellow,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            100),
+                                                  ),
+                                                  child: const Text(
+                                                      "PLAY AGAIN",
+                                                      style: TextStyle(
+                                                          color: bgDarkBlue,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          letterSpacing: 1.5)),
+                                                ),
                                               ),
-                                              child: Text("PLAY AGAIN", style: TextStyle(color: bgDarkBlue, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1566,32 +2046,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
-
-                // ── Hint text ──
-                if (gameState == 'PLAY' && _showTraceHint && _tutorialStep == 0)
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: layout.spacingXs),
-                    child: TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 800),
-                      tween: Tween(begin: 0.0, end: 1.0),
-                      builder: (context, value, child) {
-                        return Opacity(opacity: value, child: child);
-                      },
-                      child: Text(
-                        activeTrace.length <= 1
-                            ? "TAP ANY CELL TO START"
-                            : "DRAG TO TRACE THE SHAPE",
-                        style: TextStyle(
-                          color: gameYellow,
-                          fontSize: layout.fontSm,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                SizedBox(height: layout.spacingXs),
 
                 // ── Piece selector ──
                 _buildPieceSelector(layout),
@@ -1621,8 +2075,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: gameYellow,
                           elevation: 0,
-                          padding: EdgeInsets.symmetric(
-                              vertical: layout.buttonPadV),
+                          padding:
+                              EdgeInsets.symmetric(vertical: layout.buttonPadV),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(100)),
                         ),
@@ -1642,138 +2096,28 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               ],
             ),
 
-            // ── Interactive Tutorial Overlay ──
-            if (_tutorialStep > 0) _buildTutorialOverlay(layout),
+            // ── Animated Global Hand for Tutorial Demo ──
+            if (_tutorialStep == 1)
+              AnimatedPositioned(
+                  duration: _handDuration,
+                  curve: _handCurve,
+                  left: _handPos.dx -
+                      (layout.pieceSlotSize * 0.4), // center offset correctly
+                  top: _handPos.dy - (layout.pieceSlotSize * 0.1),
+                  child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: _handVisible ? 1.0 : 0.0,
+                      child: AnimatedScale(
+                        duration: const Duration(milliseconds: 150),
+                        scale: _handPressed ? 0.8 : 1.0,
+                        child: IgnorePointer(
+                            child: Icon(
+                          Icons.touch_app,
+                          color: Colors.white,
+                          size: layout.pieceSlotSize * 0.8,
+                        )),
+                      ))),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTutorialOverlay(GameLayout layout) {
-    String message;
-    IconData icon;
-    Alignment alignment;
-    IconData? arrowIcon;
-
-    switch (_tutorialStep) {
-      case 1:
-        message = "TAP A SHAPE BELOW\nTO SELECT IT";
-        icon = Icons.touch_app_rounded;
-        alignment = const Alignment(0, 0.45);
-        arrowIcon = Icons.arrow_downward_rounded;
-        break;
-      case 2:
-        message = "NOW TAP AN EMPTY CELL\nON THE GRID";
-        icon = Icons.grid_4x4_rounded;
-        alignment = const Alignment(0, -0.80);
-        arrowIcon = Icons.arrow_downward_rounded;
-        break;
-      case 3:
-        message = "DRAG YOUR FINGER\nTO TRACE THE SHAPE";
-        icon = Icons.swipe_rounded;
-        alignment = const Alignment(0, -0.80);
-        arrowIcon = Icons.arrow_downward_rounded;
-        break;
-      case 4:
-        message = "GREAT JOB! 🎉\nYOU'RE READY TO PLAY!";
-        icon = Icons.celebration_rounded;
-        alignment = Alignment.center;
-        arrowIcon = null; // No arrow needed
-        break;
-      default:
-        return const SizedBox.shrink();
-    }
-
-    return IgnorePointer(
-      ignoring: _tutorialStep < 4,
-      child: GestureDetector(
-        onTap: _tutorialStep == 4
-            ? () => setState(() => _tutorialStep = 0)
-            : null,
-        behavior: _tutorialStep == 4
-            ? HitTestBehavior.opaque
-            : HitTestBehavior.translucent,
-        child: Container(
-          color: _tutorialStep == 4
-              ? bgDarkBlue.withValues(alpha: 0.6)
-              : Colors.transparent,
-          child: Align(
-            alignment: alignment,
-            child: TweenAnimationBuilder<double>(
-              key: ValueKey(_tutorialStep),
-              duration: const Duration(milliseconds: 500),
-              tween: Tween(begin: 0.0, end: 1.0),
-              curve: Curves.elasticOut,
-              builder: (context, value, child) {
-                return Transform.scale(
-                  scale: 0.5 + value * 0.5,
-                  child: Opacity(
-                    opacity: value.clamp(0.0, 1.0),
-                    child: child,
-                  ),
-                );
-              },
-              child: IgnorePointer(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 32),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                  decoration: BoxDecoration(
-                    color: cardDarkBlue,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: gameYellow, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                          color: gameYellow.withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          spreadRadius: 2),
-                      BoxShadow(
-                          color: bgDarkBlue.withValues(alpha: 0.8),
-                          blurRadius: 40,
-                          spreadRadius: 10),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(icon, color: gameYellow, size: 36),
-                      const SizedBox(height: 12),
-                      Text(
-                        message,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: fontWhite,
-                          fontSize: layout.fontMd,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          height: 1.4,
-                        ),
-                      ),
-                      if (arrowIcon != null) ...[
-                        const SizedBox(height: 8),
-                        AnimatedBuilder(
-                          animation: _pulseController,
-                          builder: (context, child) {
-                            return Opacity(
-                              opacity:
-                                  0.4 + _pulseController.value * 0.6,
-                              child: child,
-                            );
-                          },
-                          child: Icon(
-                            arrowIcon,
-                            color: gameYellow,
-                            size: 24,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -1809,7 +2153,7 @@ class ShapeHudPainter extends CustomPainter {
     for (var c in targetShape) {
       Rect rect =
           Rect.fromLTWH(offX + c.x * cs, offY + c.y * cs, cs, cs).deflate(2.0);
-          
+
       Paint p = Paint()
         ..shader = LinearGradient(
           begin: Alignment.topLeft,
@@ -1825,7 +2169,9 @@ class ShapeHudPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.0;
       canvas.drawRRect(
-          RRect.fromRectAndRadius(rect.deflate(1.0), Radius.circular(cs * 0.20)), highlight);
+          RRect.fromRectAndRadius(
+              rect.deflate(1.0), Radius.circular(cs * 0.20)),
+          highlight);
     }
   }
 
@@ -1843,9 +2189,26 @@ class GamePainter extends CustomPainter {
   final GameCoordinate playerCoord;
   final Set<GameCoordinate> activeTrace;
   final int activeColorIndex;
+  final List<GameCoordinate>? hintTrace;
+  final double fingerAnimValue;
+  final Set<GameCoordinate> clearingCells;
+  final double clearAnimValue;
 
-  GamePainter(this.gridSize, this.grid, this.playerCoord, this.activeTrace,
-      this.activeColorIndex);
+  final Set<GameCoordinate> thudCells;
+  final double thudAnimValue;
+
+  GamePainter(
+      this.gridSize,
+      this.grid,
+      this.playerCoord,
+      this.activeTrace,
+      this.activeColorIndex,
+      this.hintTrace,
+      this.fingerAnimValue,
+      this.clearingCells,
+      this.clearAnimValue,
+      this.thudCells,
+      this.thudAnimValue);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1859,8 +2222,6 @@ class GamePainter extends CustomPainter {
       ..color = cardDarkBlue
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
-
-    Paint obstaclePaint = Paint()..color = fontWhite;
 
     Paint hurdleXPaint = Paint()
       ..color = bgDarkBlue
@@ -1886,8 +2247,8 @@ class GamePainter extends CustomPainter {
         if (grid[x][y] == 1) {
           // Hurdle: glowing red gradient
           Paint hurdleGradient = Paint()
-            ..shader = RadialGradient(
-              colors: [const Color(0xFFFF7A7A), const Color(0xFFD61C1C)],
+            ..shader = const RadialGradient(
+              colors: [Color(0xFFFF7A7A), Color(0xFFD61C1C)],
               focal: Alignment.center,
               radius: 0.8,
             ).createShader(cellRect);
@@ -1905,12 +2266,29 @@ class GamePainter extends CustomPainter {
             hurdleXPaint,
           );
         } else if (grid[x][y] >= 2) {
-          // Captured cell with color gradient
+          bool isThudding = thudCells.contains(GameCoordinate(x, y));
           int ci = grid[x][y];
           Color cellColor = (ci >= 0 && ci < shapeColors.length)
               ? shapeColors[ci]
               : Colors.grey;
-              
+
+          bool isClearing = clearingCells.contains(GameCoordinate(x, y));
+          if (isClearing) {
+            double scl = 1.0 + sin(clearAnimValue * pi) * 0.3 - clearAnimValue;
+            if (scl < 0) scl = 0;
+            double centerDX = cellRect.center.dx;
+            double centerDY = cellRect.center.dy;
+            cellRect = Rect.fromCenter(
+                center: Offset(centerDX, centerDY),
+                width: cellRect.width * scl,
+                height: cellRect.height * scl);
+            rrect = RRect.fromRectAndRadius(
+                cellRect, Radius.circular(radius * scl));
+            cellColor =
+                Color.lerp(cellColor, Colors.white, clearAnimValue * 1.5) ??
+                    Colors.white;
+          }
+
           Paint capturedPaint = Paint()
             ..shader = LinearGradient(
               begin: Alignment.topLeft,
@@ -1920,7 +2298,17 @@ class GamePainter extends CustomPainter {
                 cellColor,
               ],
             ).createShader(cellRect);
-            
+
+          if (isThudding && !isClearing) {
+            double bounce = 1.0 + sin(thudAnimValue * pi) * 0.12;
+            double cx = cellRect.center.dx;
+            double cy = cellRect.center.dy;
+            Rect bounced = Rect.fromCenter(
+                center: Offset(cx, cy),
+                width: cellRect.width * bounce,
+                height: cellRect.height * bounce);
+            rrect = RRect.fromRectAndRadius(bounced, Radius.circular(radius));
+          }
           canvas.drawRRect(rrect, capturedPaint);
 
           // Subtle inner border for depth
@@ -1966,6 +2354,71 @@ class GamePainter extends CustomPainter {
 
       Paint dotPaint = Paint()..color = Colors.white;
       canvas.drawCircle(pRect.center, cellSize * 0.1, dotPaint);
+    }
+
+    // Hint Trace / Hand animation
+    if (hintTrace != null && hintTrace!.isNotEmpty) {
+      int n = hintTrace!.length;
+      double progress = fingerAnimValue;
+
+      double traceProg = ((progress - 0.2) / 0.6).clamp(0.0, 1.0);
+      double opacity = 1.0;
+      if (progress < 0.2) opacity = progress / 0.2;
+      if (progress > 0.8) opacity = 1.0 - ((progress - 0.8) / 0.2);
+
+      // Draw Trace Outline (Ghost)
+      Paint ghostPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.15 * opacity)
+        ..style = PaintingStyle.fill;
+
+      Paint ghostBorderPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.5 * opacity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+
+      for (var hc in hintTrace!) {
+        Rect rect =
+            Rect.fromLTWH(hc.x * cellSize, hc.y * cellSize, cellSize, cellSize)
+                .deflate(inset);
+        RRect rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
+        canvas.drawRRect(rrect, ghostPaint);
+        canvas.drawRRect(rrect.deflate(1.0), ghostBorderPaint);
+      }
+
+      // Compute finger position
+      double totalDist = (n - 1).toDouble();
+      double currentPos = traceProg * totalDist;
+      int idx = currentPos.floor();
+      int nextIdx = min(idx + 1, n - 1);
+      double frac = currentPos - idx;
+
+      GameCoordinate c1 = hintTrace![idx];
+      GameCoordinate c2 = hintTrace![nextIdx];
+
+      double px1 = c1.x * cellSize + cellSize / 2;
+      double py1 = c1.y * cellSize + cellSize / 2;
+      double px2 = c2.x * cellSize + cellSize / 2;
+      double py2 = c2.y * cellSize + cellSize / 2;
+
+      double fx = px1 + (px2 - px1) * frac;
+      double fy = py1 + (py2 - py1) * frac;
+
+      // Draw finger icon
+      TextPainter textPainter = TextPainter(
+        textDirection: TextDirection.ltr,
+        text: TextSpan(
+          text: String.fromCharCode(Icons.touch_app.codePoint),
+          style: TextStyle(
+              color: Colors.white.withValues(alpha: opacity),
+              fontSize: cellSize * 1.5,
+              fontFamily: Icons.touch_app.fontFamily,
+              package: Icons.touch_app.fontPackage),
+        ),
+      );
+      textPainter.layout();
+      Offset textOffset =
+          Offset(fx - textPainter.width / 2.5, fy - textPainter.height / 4);
+      textPainter.paint(canvas, textOffset);
     }
   }
 

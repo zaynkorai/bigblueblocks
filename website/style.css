@@ -2,13 +2,22 @@
     --bg-dark: #010816;
     --navy: #0B1B3C;
     --blue: #2E7DFF;
-    --purple: #BC13FE;
-    --pink: #FF33CC;
+    --orange: #FF5E00;
+    --green: #00FF55;
+    --red: #FF003C;
     --yellow: #FFC900;
     --text-primary: #ffffff;
     --text-secondary: #94a3b8;
     --glass: rgba(11, 27, 60, 0.7);
     --neon-blue: 0 0 10px rgba(46, 125, 255, 0.5), 0 0 20px rgba(46, 125, 255, 0.3);
+    
+    /* Official App Gradients */
+    --grad-blue: linear-gradient(135deg, rgba(46, 125, 255, 0.6) 0%, #2E7DFF 100%);
+    --grad-orange: linear-gradient(135deg, rgba(255, 94, 0, 0.6) 0%, #FF5E00 100%);
+    --grad-green: linear-gradient(135deg, rgba(0, 255, 85, 0.6) 0%, #00FF55 100%);
+    --grad-red: linear-gradient(135deg, rgba(255, 0, 60, 0.6) 0%, #FF003C 100%);
+    --grad-yellow: linear-gradient(135deg, rgba(255, 201, 0, 0.6) 0%, #FFC900 100%);
+    --grad-hurdle: radial-gradient(circle, #FF7A7A 0%, #D61C1C 100%);
 }
 
 * {
@@ -99,6 +108,13 @@ nav {
     border: 1px solid var(--blue);
     border-radius: 9999px;
     font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-sm:hover {
+    background: var(--blue);
+    color: white !important;
+    box-shadow: var(--neon-blue);
 }
 
 .btn-primary {
@@ -119,6 +135,10 @@ nav {
 .btn-primary:hover {
     transform: translateY(-2px);
     background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 100%);
+}
+
+.nav-links i, .hero-actions i {
+    margin-right: 8px;
 }
 
 .btn-secondary {
@@ -225,7 +245,8 @@ h1 {
     height: 22px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.05);
-    transition: background 0.5s;
+    border-radius: 4px;
+    transition: all 0.5s ease;
 }
 
 /* Floating Elements */
@@ -238,30 +259,33 @@ h1 {
 .b1 {
     width: 30px;
     height: 30px;
-    background: var(--blue);
+    background: var(--grad-blue);
     top: -15px;
     right: 5%;
     filter: blur(2px);
+    box-shadow: 0 0 15px rgba(46, 125, 255, 0.4);
 }
 
 .b2 {
     width: 45px;
     height: 45px;
-    background: var(--purple);
+    background: var(--grad-yellow);
     bottom: 5%;
     left: 0;
     filter: blur(5px);
     animation-delay: 2s;
+    box-shadow: 0 0 20px rgba(255, 201, 0, 0.3);
 }
 
 .b3 {
     width: 25px;
     height: 25px;
-    background: var(--pink);
+    background: var(--grad-orange);
     top: 15%;
     left: -15px;
     filter: blur(1px);
     animation-delay: 4s;
+    box-shadow: 0 0 10px rgba(255, 94, 0, 0.4);
 }
 
 @keyframes float {
@@ -369,8 +393,8 @@ footer {
 
     .nav-wrapper {
         flex-direction: row;
-        justify-content: flex-start;
-        gap: 2rem;
+        justify-content: space-between;
+        align-items: center;
     }
 
     .nav-links {

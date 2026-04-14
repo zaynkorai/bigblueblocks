@@ -14,23 +14,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Random Grid Capture Animation
     function animateGrid() {
-        const randomIndex = Math.floor(Math.random() * nodes.length);
-        const node = nodes[randomIndex];
+        const shapeTypes = [
+            [[0, 0]], // Dot
+            [[0, 0], [1, 0], [0, 1], [1, 1]], // Square
+            [[0, 0], [1, 0], [2, 0]], // 3x1 Line
+            [[0, 0], [0, 1], [0, 2]], // 1x3 Line
+            [[0, 0], [1, 0], [1, 1]], // L small
+        ];
 
-        // Pick a random color from the app's official theme
-        const colors = ['#00FF55', '#FFC900', '#BC13FE', '#FF5E00', '#2E7DFF'];
-        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+        const shape = shapeTypes[Math.floor(Math.random() * shapeTypes.length)];
+        const startX = Math.floor(Math.random() * (cols - 2));
+        const startY = Math.floor(Math.random() * (rows - 2));
 
-        node.style.background = randomColor;
-        node.style.border = `1px solid ${randomColor}`;
+        // Pick a random gradient from the official theme
+        const gradients = [
+            'var(--grad-green)',
+            'var(--grad-yellow)',
+            'var(--grad-orange)',
+            'var(--grad-blue)',
+            'var(--grad-red)',
+            'var(--grad-hurdle)'
+        ];
+        const randomGrad = gradients[Math.floor(Math.random() * gradients.length)];
 
-        setTimeout(() => {
-            node.style.background = 'rgba(255, 255, 255, 0.03)';
-            node.style.border = '1px solid rgba(255, 255, 255, 0.05)';
-        }, 3000);
+        shape.forEach(offset => {
+            const x = startX + offset[0];
+            const y = startY + offset[1];
+            if (x >= 0 && x < cols && y >= 0 && y < rows) {
+                const node = nodes[y * cols + x];
+                node.style.background = randomGrad;
+                node.style.border = `none`;
+                node.style.borderRadius = '4px';
+                node.style.boxShadow = '0 0 10px rgba(255, 255, 255, 0.1)';
+
+                setTimeout(() => {
+                    node.style.background = '';
+                    node.style.border = '';
+                    node.style.borderRadius = '';
+                    node.style.boxShadow = '';
+                }, 4000);
+            }
+        });
     }
 
-    setInterval(animateGrid, 300);
+    setInterval(animateGrid, 800);
 
     // Initial Capture
     for (let i = 0; i < 5; i++) animateGrid();

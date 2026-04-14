@@ -1,7 +1,7 @@
 name: bigblueblocks
 description: A simple puzzle game.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
-version: 1.1.0+1
+version: 1.1.0+7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -14,13 +14,16 @@ dependencies:
   share_plus: ^10.0.0
   cupertino_icons: ^1.0.2
   google_fonts: ^6.2.1
+  flutter_native_splash: ^2.4.1
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+  flutter_timezone: ^5.0.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.1
-  flutter_native_splash: ^2.4.1
 
 flutter_launcher_icons:
   android: "launcher_icon"
@@ -28,7 +31,7 @@ flutter_launcher_icons:
   image_path: "assets/icon.png"
 
 flutter_native_splash:
-  color: "#010816"
+  color: "#ffffff"
   image: "assets/icon.png"
   android: true
   ios: true
