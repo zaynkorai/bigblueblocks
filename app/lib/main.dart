@@ -2285,8 +2285,8 @@ class GamePainter extends CustomPainter {
             rrect = RRect.fromRectAndRadius(
                 cellRect, Radius.circular(radius * scl));
             cellColor =
-                Color.lerp(cellColor, Colors.white, clearAnimValue * 1.5) ??
-                    Colors.white;
+                Color.lerp(cellColor, const Color(0xFF2E7DFF), clearAnimValue * 1.5) ??
+                    const Color(0xFF2E7DFF);
           }
 
           Paint capturedPaint = Paint()
