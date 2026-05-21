@@ -36,10 +36,8 @@ const List<Color> shapeColors = [
   Colors.transparent, // 0 - Empty
   Colors.white, // 1 - Hurdle
   Color(0xFFFFC900), // 2 - Yellow
-  Color(0xFFFF5E00), // 3 - Orange
-  Color(0xFF2E7DFF), // 4 - Blue
-  Color(0xFF00FF55), // 5 - Green
-  Color(0xFFFF003C), // 6 - Red
+  Color(0xFF2E7DFF), // 3 - Blue
+  Color(0xFFFF003C), // 4 - Red
 ];
 
 enum HapticType { light, medium, heavy, selection }
@@ -938,7 +936,7 @@ class _GameScreenState extends State<GameScreen>
 
   List<GamePiece?> _createPieceSet() {
     const int minColor = 2;
-    const int maxColor = 6;
+    const int maxColor = 4;
     Random rnd = Random();
     List<GamePiece?> pieces = [];
     final pool = _piecePoolForLevel(level);
@@ -1569,25 +1567,35 @@ class _GameScreenState extends State<GameScreen>
             }
           },
           behavior: HitTestBehavior.opaque,
-          child: CustomPaint(
-            key: _boardKey,
-            size: Size(constraints.maxWidth, constraints.maxHeight),
-            painter: GamePainter(
-              gridSize,
-              grid,
-              playerCoord,
-              activeTrace,
-              selectedPieceIndex != null &&
-                      availablePieces[selectedPieceIndex!] != null
-                  ? availablePieces[selectedPieceIndex!]!.colorIndex
-                  : 0,
-              _hintTrace,
-              _fingerController.value,
-              _clearingCells,
-              _clearController.value,
-              _thudCells,
-              _thudController.value,
+          child: TweenAnimationBuilder<Offset>(
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeOut,
+            tween: Tween<Offset>(
+              begin: Offset(playerCoord.x.toDouble(), playerCoord.y.toDouble()),
+              end: Offset(playerCoord.x.toDouble(), playerCoord.y.toDouble()),
             ),
+            builder: (context, visualOffset, child) {
+              return CustomPaint(
+                key: _boardKey,
+                size: Size(constraints.maxWidth, constraints.maxHeight),
+                painter: GamePainter(
+                  gridSize,
+                  grid,
+                  visualOffset,
+                  activeTrace,
+                  selectedPieceIndex != null &&
+                          availablePieces[selectedPieceIndex!] != null
+                      ? availablePieces[selectedPieceIndex!]!.colorIndex
+                      : 0,
+                  _hintTrace,
+                  _fingerController.value,
+                  _clearingCells,
+                  _clearController.value,
+                  _thudCells,
+                  _thudController.value,
+                ),
+              );
+            },
           ),
         );
       },
@@ -2186,7 +2194,7 @@ class ShapeHudPainter extends CustomPainter {
 class GamePainter extends CustomPainter {
   final int gridSize;
   final List<List<int>> grid;
-  final GameCoordinate playerCoord;
+  final Offset visualPlayerOffset;
   final Set<GameCoordinate> activeTrace;
   final int activeColorIndex;
   final List<GameCoordinate>? hintTrace;
@@ -2200,7 +2208,7 @@ class GamePainter extends CustomPainter {
   GamePainter(
       this.gridSize,
       this.grid,
-      this.playerCoord,
+      this.visualPlayerOffset,
       this.activeTrace,
       this.activeColorIndex,
       this.hintTrace,
@@ -2341,19 +2349,39 @@ class GamePainter extends CustomPainter {
       canvas.drawLine(Offset(0, pos), Offset(size.width, pos), gridPaint);
     }
 
-    // Player cursor
+    // Player cursor (sliding shape)
     if (activeTrace.isNotEmpty && activeColorIndex != 0) {
       Color cursorColor =
           (activeColorIndex >= 0 && activeColorIndex < shapeColors.length)
               ? shapeColors[activeColorIndex]
               : Colors.grey;
-      Paint playerCore = Paint()..color = cursorColor;
-      Rect pRect = Rect.fromLTWH(playerCoord.x * cellSize,
-          playerCoord.y * cellSize, cellSize, cellSize);
-      canvas.drawCircle(pRect.center, cellSize * 0.35, playerCore);
+              
+      Rect pRect = Rect.fromLTWH(visualPlayerOffset.dx * cellSize,
+          visualPlayerOffset.dy * cellSize, cellSize, cellSize).deflate(inset);
+          
+      RRect pRRect = RRect.fromRectAndRadius(pRect, Radius.circular(radius));
+      
+      Paint playerCore = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            cursorColor.withValues(alpha: 0.6),
+            cursorColor,
+          ],
+        ).createShader(pRect);
+        
+      canvas.drawRRect(pRRect, playerCore);
 
-      Paint dotPaint = Paint()..color = Colors.white;
-      canvas.drawCircle(pRect.center, cellSize * 0.1, dotPaint);
+      // Subtle inner border for depth
+      Paint innerBorder = Paint()
+        ..color = Colors.white.withValues(alpha: 0.25)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              pRect.deflate(1.5), Radius.circular(radius - 1)),
+          innerBorder);
     }
 
     // Hint Trace / Hand animation
