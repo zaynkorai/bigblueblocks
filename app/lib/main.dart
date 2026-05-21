@@ -856,71 +856,46 @@ class _GameScreenState extends State<GameScreen>
   // Tier 1 (Levels 5-6): 4-line, T-block
   // Tier 2 (Levels 7+): 5-line, Plus, U
   static final List<List<List<GameCoordinate>>> _pieceTiers = [
-    // ── Tier 0 (Levels 1-4) ──
+    // ── Tier 0 (Levels 1-5): Very Simple ──
     [
-      [const GameCoordinate(0, 0)],
-      [const GameCoordinate(0, 0), const GameCoordinate(1, 0)],
-      [
-        const GameCoordinate(0, 0),
-        const GameCoordinate(1, 0),
-        const GameCoordinate(1, 1)
-      ],
+      [const GameCoordinate(0, 0), const GameCoordinate(1, 0)], // 2-line
       [
         const GameCoordinate(0, 0),
         const GameCoordinate(1, 0),
         const GameCoordinate(2, 0)
-      ],
+      ], // 3-line
+    ],
+    // ── Tier 1 (Levels 6-10): Intermediate ──
+    [
       [
         const GameCoordinate(0, 0),
         const GameCoordinate(1, 0),
         const GameCoordinate(0, 1),
         const GameCoordinate(1, 1)
-      ],
+      ], // 2x2 Square
       [
         const GameCoordinate(0, 0),
+        const GameCoordinate(1, 0),
+        const GameCoordinate(2, 0),
         const GameCoordinate(0, 1),
-        const GameCoordinate(0, 2),
-        const GameCoordinate(1, 2)
-      ],
+        const GameCoordinate(0, 2)
+      ], // Corner (Big L)
     ],
-    // ── Tier 1 (Levels 5-6) ──
+    // ── Tier 2 (Levels 11+): Advanced (but still simple) ──
     [
       [
         const GameCoordinate(0, 0),
         const GameCoordinate(1, 0),
         const GameCoordinate(2, 0),
         const GameCoordinate(3, 0)
-      ],
+      ], // 4-line
       [
         const GameCoordinate(1, 0),
         const GameCoordinate(0, 1),
         const GameCoordinate(1, 1),
         const GameCoordinate(2, 1)
-      ],
-    ],
-    // ── Tier 2 (Levels 7+) ──
-    [
-      [
-        const GameCoordinate(0, 0),
-        const GameCoordinate(1, 0),
-        const GameCoordinate(2, 0),
-        const GameCoordinate(3, 0),
-        const GameCoordinate(4, 0)
-      ],
-      [
-        const GameCoordinate(1, 0),
-        const GameCoordinate(0, 1),
-        const GameCoordinate(1, 1),
-        const GameCoordinate(2, 1),
-        const GameCoordinate(1, 2)
-      ],
-      [
-        const GameCoordinate(0, 0),
-        const GameCoordinate(2, 0),
-        const GameCoordinate(0, 1),
-        const GameCoordinate(1, 1),
-        const GameCoordinate(2, 1)
-      ],
+      ], // T-block
+      [const GameCoordinate(2, 2)], // 3x3 Square
     ],
   ];
 
@@ -929,8 +904,8 @@ class _GameScreenState extends State<GameScreen>
   List<List<GameCoordinate>> _piecePoolForLevel(int lvl) {
     List<List<GameCoordinate>> pool = [];
     pool.addAll(_pieceTiers[0]); // Always available
-    if (lvl >= 5) pool.addAll(_pieceTiers[1]);
-    if (lvl >= 7) pool.addAll(_pieceTiers[2]);
+    if (lvl >= 6) pool.addAll(_pieceTiers[1]);
+    if (lvl >= 11) pool.addAll(_pieceTiers[2]);
     return pool;
   }
 
@@ -2292,9 +2267,9 @@ class GamePainter extends CustomPainter {
                 height: cellRect.height * scl);
             rrect = RRect.fromRectAndRadius(
                 cellRect, Radius.circular(radius * scl));
-            cellColor =
-                Color.lerp(cellColor, const Color(0xFF2E7DFF), clearAnimValue * 1.5) ??
-                    const Color(0xFF2E7DFF);
+            cellColor = Color.lerp(
+                    cellColor, const Color(0xFF2E7DFF), clearAnimValue * 1.5) ??
+                const Color(0xFF2E7DFF);
           }
 
           Paint capturedPaint = Paint()
@@ -2355,12 +2330,13 @@ class GamePainter extends CustomPainter {
           (activeColorIndex >= 0 && activeColorIndex < shapeColors.length)
               ? shapeColors[activeColorIndex]
               : Colors.grey;
-              
+
       Rect pRect = Rect.fromLTWH(visualPlayerOffset.dx * cellSize,
-          visualPlayerOffset.dy * cellSize, cellSize, cellSize).deflate(inset);
-          
+              visualPlayerOffset.dy * cellSize, cellSize, cellSize)
+          .deflate(inset);
+
       RRect pRRect = RRect.fromRectAndRadius(pRect, Radius.circular(radius));
-      
+
       Paint playerCore = Paint()
         ..shader = LinearGradient(
           begin: Alignment.topLeft,
@@ -2370,7 +2346,7 @@ class GamePainter extends CustomPainter {
             cursorColor,
           ],
         ).createShader(pRect);
-        
+
       canvas.drawRRect(pRRect, playerCore);
 
       // Subtle inner border for depth
