@@ -152,19 +152,45 @@ class GamePainter extends CustomPainter {
 
           bool isClearing = clearingCells.contains(GameCoordinate(x, y));
           if (isClearing) {
-            double scl = 1.0 + sin(clearAnimValue * pi) * 0.3 - clearAnimValue;
+            // Block Blast style clear: Pop up slightly, flash white, then shrink to 0
+            double scl;
+            if (clearAnimValue < 0.3) {
+              scl = 1.0 + (clearAnimValue / 0.3) * 0.2; // 1.0 -> 1.2
+            } else {
+              // 1.2 -> 0.0 with ease-in
+              double t = (clearAnimValue - 0.3) / 0.7;
+              scl = 1.2 * (1.0 - t * t); 
+            }
             if (scl < 0) scl = 0;
+
             double centerDX = cellRect.center.dx;
             double centerDY = cellRect.center.dy;
+
+            // Draw expanding glowing backdrop
+            double glowScl = 1.0 + clearAnimValue;
+            double glowOpacity = (1.0 - clearAnimValue).clamp(0.0, 1.0) * 0.6;
+            Rect glowRect = Rect.fromCenter(
+                center: Offset(centerDX, centerDY),
+                width: cellSize * glowScl,
+                height: cellSize * glowScl);
+            Paint glowPaint = Paint()
+              ..color = Colors.white.withValues(alpha: glowOpacity)
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12.0);
+            canvas.drawRect(glowRect, glowPaint);
+
             cellRect = Rect.fromCenter(
                 center: Offset(centerDX, centerDY),
                 width: cellRect.width * scl,
                 height: cellRect.height * scl);
             rrect = RRect.fromRectAndRadius(
                 cellRect, Radius.circular(radius * scl));
-            cellColor = Color.lerp(
-                    cellColor, const Color(0xFF2E7DFF), clearAnimValue * 1.5) ??
-                const Color(0xFF2E7DFF);
+
+            // Flash cell color to pure white at the beginning
+            double flashAmount = (1.0 - clearAnimValue * 2.5).clamp(0.0, 1.0);
+            cellColor = Color.lerp(cellColor, Colors.white, flashAmount) ?? Colors.white;
+
+            // Skip drawing if the cell has fully shrunk away
+            if (scl <= 0.01) continue;
           }
 
           Paint capturedPaint = Paint()
@@ -323,14 +349,6 @@ class GamePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant GamePainter oldDelegate) {
-    return oldDelegate.visualPlayerOffset != visualPlayerOffset ||
-        oldDelegate.activeTrace.length != activeTrace.length ||
-        oldDelegate.grid != grid ||
-        oldDelegate.hintTrace != hintTrace ||
-        oldDelegate.fingerAnimValue != fingerAnimValue ||
-        oldDelegate.clearAnimValue != clearAnimValue ||
-        oldDelegate.clearingCells != clearingCells ||
-        oldDelegate.thudAnimValue != thudAnimValue ||
-        oldDelegate.thudCells != thudCells;
+    return true;
   }
 }

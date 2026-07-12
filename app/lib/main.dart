@@ -523,7 +523,7 @@ class _GameScreenState extends State<GameScreen>
     WidgetsBinding.instance.addObserver(this);
     _clearController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 350),
     )..addListener(() {
         setState(() {});
       });
@@ -956,16 +956,17 @@ class _GameScreenState extends State<GameScreen>
     }
 
     if (totalLines > 0) {
+      final cellsToClearCopy = Set<GameCoordinate>.from(cellsToClear);
       setState(() {
-        _clearingCells = Set.from(cellsToClear);
+        _clearingCells = cellsToClearCopy;
       });
       _clearController.forward(from: 0.0).then((_) {
         if (mounted) {
           setState(() {
-            for (var c in _clearingCells) {
+            for (var c in cellsToClearCopy) {
               grid[c.x][c.y] = 0;
             }
-            _clearingCells.clear();
+            _clearingCells = _clearingCells.difference(cellsToClearCopy);
             _placeHurdles();
             totalCapturable = gridSize * gridSize - hurdleCount;
           });
