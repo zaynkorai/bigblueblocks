@@ -4,9 +4,11 @@ import 'dart:math';
 import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:bigblueblocks/services/notification_service.dart';
+import 'package:bigblueblocks/services/ad_helper.dart';
 import 'painters.dart';
 import 'settings_dialog.dart';
 
@@ -16,6 +18,9 @@ void main() async {
 
   // Initialize notifications
   await NotificationService().init();
+
+  // Initialize Google Mobile Ads SDK
+  MobileAds.instance.initialize();
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -216,6 +221,10 @@ class _GameScreenState extends State<GameScreen>
   int get level => min((linesCleared ~/ 5) + 1, 10);
   int get hurdleCount => min(level, 4);
   int get score => gameScore;
+
+  // ── Banner Ad ──
+  BannerAd? _bannerAd;
+  bool _isAdLoaded = false;
 
   // ── Settings ──
   bool _soundEnabled = true;
@@ -554,6 +563,7 @@ class _GameScreenState extends State<GameScreen>
     )..repeat();
 
     initGame();
+    _loadBannerAd();
 
     // Schedule settings load after first frame to ensure bindings are ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -564,6 +574,7 @@ class _GameScreenState extends State<GameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _bannerAd?.dispose();
     _clearController.dispose();
     _thudController.dispose();
     _dealController.dispose();
@@ -573,6 +584,29 @@ class _GameScreenState extends State<GameScreen>
     _comboTimer?.cancel();
     _idleTimer?.cancel();
     super.dispose();
+  }
+
+  /// Loads a 320×50 standard banner ad.
+  void _loadBannerAd() {
+    if (!AdHelper.isSupportedPlatform) {
+      return;
+    }
+    _bannerAd = BannerAd(
+      adUnitId: AdHelper.bannerAdUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          setState(() {
+            _isAdLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          debugPrint('BannerAd failed to load: $error');
+          ad.dispose();
+        },
+      ),
+    )..load();
   }
 
   @override
@@ -1600,199 +1634,228 @@ class _GameScreenState extends State<GameScreen>
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0),
                     child: Center(
-                      child: AspectRatio(
-                        aspectRatio: 1,
-                        child: AnimatedBuilder(
-                          animation: Listenable.merge(
-                              [_shakeController, _fingerController]),
-                          builder: (context, child) {
-                            double shake =
-                                sin(_shakeController.value * pi * 6) *
-                                    (1 - _shakeController.value) *
-                                    6;
-                            return Transform.translate(
-                              offset: Offset(shake, 0),
-                              child: child,
-                            );
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: bgDarkBlue,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: comboCount > 1 ? gameYellow : fontWhite,
-                                width: comboCount > 1 ? 3.0 : 2.0,
-                              ),
-                            ),
-                            padding: const EdgeInsets.all(3.0),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  RepaintBoundary(child: _buildBoard()),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: AspectRatio(
+                              aspectRatio: 1,
+                            child: AnimatedBuilder(
+                              animation: Listenable.merge(
+                                  [_shakeController, _fingerController]),
+                              builder: (context, child) {
+                                double shake =
+                                    sin(_shakeController.value * pi * 6) *
+                                        (1 - _shakeController.value) *
+                                        6;
+                                return Transform.translate(
+                                  offset: Offset(shake, 0),
+                                  child: child,
+                                );
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: bgDarkBlue,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: comboCount > 1 ? gameYellow : fontWhite,
+                                    width: comboCount > 1 ? 3.0 : 2.0,
+                                  ),
+                                ),
+                                padding: const EdgeInsets.all(3.0),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      RepaintBoundary(child: _buildBoard()),
 
-                                  // Score popups
-                                  ..._scorePopups
-                                      .map((p) => _buildScorePopupWidget(p)),
+                                      // Score popups
+                                      ..._scorePopups
+                                          .map((p) => _buildScorePopupWidget(p)),
 
-                                  // Combo text overlay
-                                  if (_comboText != null)
-                                    IgnorePointer(
-                                      child: Center(
-                                        child: TweenAnimationBuilder<double>(
-                                          key: ValueKey(_comboText),
+                                      // Combo text overlay
+                                      if (_comboText != null)
+                                        IgnorePointer(
+                                          child: Center(
+                                            child: TweenAnimationBuilder<double>(
+                                              key: ValueKey(_comboText),
+                                              duration:
+                                                  const Duration(milliseconds: 400),
+                                              tween: Tween(begin: 0.5, end: 1.0),
+                                              curve: Curves.elasticOut,
+                                              builder: (context, scale, child) {
+                                                return Transform.scale(
+                                                    scale: scale, child: child);
+                                              },
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                    horizontal: 20, vertical: 10),
+                                                decoration: BoxDecoration(
+                                                  color: bgDarkBlue.withValues(
+                                                      alpha: 0.85),
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
+                                                  border: Border.all(
+                                                      color: gameYellow, width: 2),
+                                                ),
+                                                child: Text(_comboText!,
+                                                    style: TextStyle(
+                                                      color: gameYellow,
+                                                      fontSize: layout.fontLg * 0.9,
+                                                      fontWeight: FontWeight.bold,
+                                                      letterSpacing: 2,
+                                                    )),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+
+                                      // Game over overlay
+                                      if (gameState == 'STUCK' ||
+                                          gameState == 'END')
+                                        TweenAnimationBuilder<double>(
+                                          key: const ValueKey('game_over_fade'),
                                           duration:
                                               const Duration(milliseconds: 400),
-                                          tween: Tween(begin: 0.5, end: 1.0),
-                                          curve: Curves.elasticOut,
-                                          builder: (context, scale, child) {
-                                            return Transform.scale(
-                                                scale: scale, child: child);
+                                          tween: Tween(begin: 0.0, end: 1.0),
+                                          curve: Curves.easeOut,
+                                          builder: (context, opacity, child) {
+                                            return Opacity(
+                                                opacity: opacity, child: child);
                                           },
                                           child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 20, vertical: 10),
-                                            decoration: BoxDecoration(
-                                              color: bgDarkBlue.withValues(
-                                                  alpha: 0.85),
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              border: Border.all(
-                                                  color: gameYellow, width: 2),
-                                            ),
-                                            child: Text(_comboText!,
-                                                style: TextStyle(
-                                                  color: gameYellow,
-                                                  fontSize: layout.fontLg * 0.9,
-                                                  fontWeight: FontWeight.bold,
-                                                  letterSpacing: 2,
-                                                )),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-
-                                  // Game over overlay
-                                  if (gameState == 'STUCK' ||
-                                      gameState == 'END')
-                                    TweenAnimationBuilder<double>(
-                                      key: const ValueKey('game_over_fade'),
-                                      duration:
-                                          const Duration(milliseconds: 400),
-                                      tween: Tween(begin: 0.0, end: 1.0),
-                                      curve: Curves.easeOut,
-                                      builder: (context, opacity, child) {
-                                        return Opacity(
-                                            opacity: opacity, child: child);
-                                      },
-                                      child: Container(
-                                        color:
-                                            bgDarkBlue.withValues(alpha: 0.9),
-                                        child: Center(
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              if (isNewHighScore) ...[
-                                                const Icon(Icons.stars,
-                                                    color: gameYellow,
-                                                    size: 56),
-                                                SizedBox(
-                                                    height: layout.spacingMd),
-                                                Text("NEW RECORD!",
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(
+                                            color:
+                                                bgDarkBlue.withValues(alpha: 0.9),
+                                            child: Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  if (isNewHighScore) ...[
+                                                    const Icon(Icons.stars,
                                                         color: gameYellow,
-                                                        fontSize: layout.fontXl,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        letterSpacing: 2)),
-                                              ] else ...[
-                                                Text(
-                                                    gameState == 'STUCK'
-                                                        ? "TRAPPED!"
-                                                        : "GAME OVER",
-                                                    textAlign: TextAlign.center,
-                                                    style: TextStyle(
-                                                        color:
-                                                            gameState == 'STUCK'
-                                                                ? gameYellow
-                                                                : fontWhite,
-                                                        fontSize: layout.fontXl,
-                                                        fontWeight:
-                                                            FontWeight.bold)),
-                                              ],
-                                              SizedBox(
-                                                  height: layout.spacingSm),
-                                              Text("FINAL SCORE: $score",
-                                                  style: TextStyle(
-                                                      color: fontWhite,
-                                                      fontSize: layout.fontMd,
-                                                      letterSpacing: 1.5)),
-                                              if (streakCount > 0) ...[
-                                                SizedBox(
-                                                    height: layout.spacingXs),
-                                                Text("STREAK: $streakCount",
-                                                    style: TextStyle(
-                                                        color: fontWhite
-                                                            .withValues(
-                                                                alpha: 0.6),
-                                                        fontSize: layout.fontSm,
-                                                        letterSpacing: 1)),
-                                              ],
-                                              if (linesCleared > 0) ...[
-                                                SizedBox(
-                                                    height: layout.spacingXs),
-                                                Text(
-                                                    "LINES: $linesCleared  •  LEVEL: $level",
-                                                    style: TextStyle(
-                                                        color: fontWhite
-                                                            .withValues(
-                                                                alpha: 0.5),
-                                                        fontSize: layout.fontSm,
-                                                        letterSpacing: 1)),
-                                              ],
-                                              SizedBox(
-                                                  height: layout.spacingMd),
-                                              GestureDetector(
-                                                onPanDown: (_) {
-                                                  _haptic(HapticType.light);
-                                                  initGame();
-                                                },
-                                                child: Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 32,
-                                                      vertical: 16),
-                                                  decoration: BoxDecoration(
-                                                    color: gameYellow,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            100),
-                                                  ),
-                                                  child: const Text(
-                                                      "PLAY AGAIN",
+                                                        size: 56),
+                                                    SizedBox(
+                                                        height: layout.spacingMd),
+                                                    Text("NEW RECORD!",
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(
+                                                            color: gameYellow,
+                                                            fontSize: layout.fontXl,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            letterSpacing: 2)),
+                                                  ] else ...[
+                                                    Text(
+                                                        gameState == 'STUCK'
+                                                            ? "TRAPPED!"
+                                                            : "GAME OVER",
+                                                        textAlign: TextAlign.center,
+                                                        style: TextStyle(
+                                                            color:
+                                                                gameState == 'STUCK'
+                                                                    ? gameYellow
+                                                                    : fontWhite,
+                                                            fontSize: layout.fontXl,
+                                                            fontWeight:
+                                                                FontWeight.bold)),
+                                                  ],
+                                                  SizedBox(
+                                                      height: layout.spacingSm),
+                                                  Text("FINAL SCORE: $score",
                                                       style: TextStyle(
-                                                          color: bgDarkBlue,
-                                                          fontWeight:
-                                                              FontWeight.bold,
+                                                          color: fontWhite,
+                                                          fontSize: layout.fontMd,
                                                           letterSpacing: 1.5)),
-                                                ),
+                                                  if (streakCount > 0) ...[
+                                                    SizedBox(
+                                                        height: layout.spacingXs),
+                                                    Text("STREAK: $streakCount",
+                                                        style: TextStyle(
+                                                            color: fontWhite
+                                                                .withValues(
+                                                                    alpha: 0.6),
+                                                            fontSize: layout.fontSm,
+                                                            letterSpacing: 1)),
+                                                  ],
+                                                  if (linesCleared > 0) ...[
+                                                    SizedBox(
+                                                        height: layout.spacingXs),
+                                                    Text(
+                                                        "LINES: $linesCleared  •  LEVEL: $level",
+                                                        style: TextStyle(
+                                                            color: fontWhite
+                                                                .withValues(
+                                                                    alpha: 0.5),
+                                                            fontSize: layout.fontSm,
+                                                            letterSpacing: 1)),
+                                                  ],
+                                                  SizedBox(
+                                                      height: layout.spacingMd),
+                                                  GestureDetector(
+                                                    onPanDown: (_) {
+                                                      _haptic(HapticType.light);
+                                                      initGame();
+                                                    },
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 32,
+                                                          vertical: 16),
+                                                      decoration: BoxDecoration(
+                                                        color: gameYellow,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                                100),
+                                                      ),
+                                                      child: const Text(
+                                                          "PLAY AGAIN",
+                                                          style: TextStyle(
+                                                              color: bgDarkBlue,
+                                                              fontWeight:
+                                                                  FontWeight.bold,
+                                                              letterSpacing: 1.5)),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                            ],
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                ],
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ),
+                ),
+
+                SizedBox(
+                  height: 102,
+                  child: (_isAdLoaded && _bannerAd != null)
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 4),
+                            Transform.scale(
+                              scale: 0.75,
+                              child: SizedBox(
+                                height: _bannerAd!.size.height.toDouble(),
+                                width: _bannerAd!.size.width.toDouble(),
+                                child: AdWidget(ad: _bannerAd!),
+                              ),
+                            ),
+                            const SizedBox(height: 48),
+                          ],
+                        )
+                      : const SizedBox.shrink(),
                 ),
 
                 // ── Piece selector ──
@@ -1841,6 +1904,7 @@ class _GameScreenState extends State<GameScreen>
                   SizedBox(height: layout.spacingSm),
 
                 SizedBox(height: layout.spacingXs),
+
               ],
             ),
 

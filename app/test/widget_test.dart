@@ -15,6 +15,6 @@ void main() {
     await tester.pump();
 
     // Verify the start screen renders
-    expect(find.text('EXECUTE TRACE'), findsOneWidget);
+    expect(find.text('SCORE'), findsOneWidget);
   });
 }
