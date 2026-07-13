@@ -77,7 +77,7 @@ class GameLayout {
 
   double get statCardWidth => (screenWidth / 4.5).clamp(65.0, 110.0);
   double get statCardPadV => (usableHeight * 0.008).clamp(4.0, 12.0);
-  double get pieceSlotSize => (screenWidth * 0.2).clamp(52.0, 88.0);
+  double get pieceSlotSize => (screenWidth * 0.23).clamp(60.0, 100.0);
   double get nextSlotSize => (pieceSlotSize * 0.52).clamp(28.0, 48.0);
 
   double get fontSm => (screenWidth * 0.025).clamp(8.0, 12.0);
@@ -1700,8 +1700,10 @@ class _GameScreenState extends State<GameScreen>
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                    child: Center(
-                      child: Column(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 36.0),
+                      child: Center(
+                        child: Column(
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1903,26 +1905,6 @@ class _GameScreenState extends State<GameScreen>
                     ),
                   ),
                 ),
-
-                SizedBox(
-                  height: 102,
-                  child: (_isAdLoaded && _bannerAd != null)
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(height: 4),
-                            Transform.scale(
-                              scale: 0.75,
-                              child: SizedBox(
-                                height: _bannerAd!.size.height.toDouble(),
-                                width: _bannerAd!.size.width.toDouble(),
-                                child: AdWidget(ad: _bannerAd!),
-                              ),
-                            ),
-                            const SizedBox(height: 48),
-                          ],
-                        )
-                      : const SizedBox.shrink(),
                 ),
 
                 // ── Piece selector ──
@@ -1970,7 +1952,24 @@ class _GameScreenState extends State<GameScreen>
                 else
                   SizedBox(height: layout.spacingSm),
 
-                SizedBox(height: layout.spacingXs),
+                SizedBox(height: layout.spacingXs + 36.0),
+
+                // ── Banner Ad at bottom (Fixed Space) ──
+                SizedBox(
+                  height: 50,
+                  child: (_isAdLoaded && _bannerAd != null)
+                      ? Center(
+                          child: Transform.scale(
+                            scale: 0.75,
+                            child: SizedBox(
+                              height: _bannerAd!.size.height.toDouble(),
+                              width: _bannerAd!.size.width.toDouble(),
+                              child: AdWidget(ad: _bannerAd!),
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
 
               ],
             ),

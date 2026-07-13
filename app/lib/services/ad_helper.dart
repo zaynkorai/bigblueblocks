@@ -17,12 +17,11 @@ class AdHelper {
   }
 
   // ── Banner Ad Unit IDs ──
-  // Google's official test ad unit IDs — safe for development.
   static String get bannerAdUnitId {
     if (Platform.isAndroid) {
-      return 'ca-app-pub-3940256099942544/6300978111'; // Android test banner
+      return 'ca-app-pub-5648970483808453/3854775633'; // Android production banner
     } else if (Platform.isIOS) {
-      return 'ca-app-pub-3940256099942544/2934735716'; // iOS test banner
+      return 'ca-app-pub-5648970483808453/9461757319'; // iOS production banner
     }
     return '';
   }

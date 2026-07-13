@@ -16,7 +16,7 @@ The app is entirely self contained and functions locally without any form of aut
     e- Access game settings (Sound, Vibration) by tapping the settings menu icon in the UI.
 
 4- External Services, Tools, or Platforms:
-BigBlueBlocks is a native offlinef irst application built entirely with Flutter. It operates completely on-device using local state management. There are no external backends, third-party authentication services, server APIs, or cloud platforms required to play the core game.
+BigBlueBlocks is a native offline-first application built entirely with Flutter. It operates completely on-device using local state management. There are no external backends, third-party authentication services, server APIs, or cloud platforms required to play the core game. The app integrates Google AdMob for banner advertisements, but the core gameplay remains fully functional offline.
 
 5- Regional Differences:
 The app functions identically across all global regions. There are no geoblocked features, IP-restricted functions, or regional content changes at this time. Localized UI text relies entirely on standard English.

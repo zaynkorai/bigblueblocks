@@ -81,6 +81,6 @@
 		<false/>
 		<!-- AdMob App ID — replace with real ID before release -->
 		<key>GADApplicationIdentifier</key>
-		<string>ca-app-pub-3940256099942544~1458002511</string>
+		<string>ca-app-pub-5648970483808453~4816132383</string>
 	</dict>
 </plist>

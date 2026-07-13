@@ -2,6 +2,15 @@
 
 This document outlines the step-by-step process for integrating a standard Google AdMob banner (`320x50`) at the safe bottom edge of the Big Blue Blocks app.
 
+## Integration Status
+- [x] **Step 1: Add the Package Dependency**
+- [x] **Step 2: Platform Setup (OS Configurations)** (Configured with production App IDs)
+- [x] **Step 3: Initialize AdMob globally**
+- [x] **Step 4: Load the Banner Ad logically** (Implemented using `AdHelper`)
+- [x] **Step 5: Implement the UI Placeholder** (Placed in body's `Column` with scaling)
+
+---
+
 ## 1. Add the Package Dependency
 Run the following command from within the `app` directory to install the official Google Mobile Ads package:
 ```bash
