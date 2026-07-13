@@ -163,7 +163,7 @@ class _MoreSettingsDialogState extends State<MoreSettingsDialog> {
                               color: fontWhite,
                               fontWeight: FontWeight.bold,
                               fontSize: 16)),
-                      Text('Version 1.1.0',
+                      Text('Version 1.2.0',
                           style: TextStyle(
                               color: Colors.white54, fontSize: 12)),
                     ],
@@ -221,7 +221,7 @@ class _MoreSettingsDialogState extends State<MoreSettingsDialog> {
                 showAboutDialog(
                   context: context,
                   applicationName: 'BigBlueBlocks',
-                  applicationVersion: '1.1.0',
+                  applicationVersion: '1.2.0',
                   applicationLegalese: '© 2026 BigBlueBlocks',
                 );
               },

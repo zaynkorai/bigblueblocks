@@ -1,3 +1,17 @@
+# What's New in v1.2.0
+
+**Celebrations** — Confetti, combo fountains, perfect clear starbursts, and gold shimmers bring a whole new level of polish and reward to every move.
+
+**Monetization & Ads** — Integrated Google AdMob banner ads at the bottom of the screen, supporting the app's ongoing development while keeping it completely free to play.
+
+**Gameplay & Accessibility** — Simplified game shapes for a more enjoyable, accessible puzzle experience, combined with smooth block drawing sliding animations and a refined color palette.
+
+**Daily Reminders & Controls** — Added localized push notifications to help you keep your brain sharp with daily reminders, plus clear settings for vibration and sound.
+
+**Updated Legal & Privacy** — Complete transparent updates to our website, Privacy Policy, and Terms of Service outlining offline capabilities, local storage, and ad settings.
+
+---
+
 # What's New in v1.1.0
 
 **Interactive Tutorial** — New players are guided with a hands-on demo that shows exactly how to play. No walls of text — just watch and jump in when you're ready.

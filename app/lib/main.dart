@@ -11,6 +11,7 @@ import 'package:bigblueblocks/services/notification_service.dart';
 import 'package:bigblueblocks/services/ad_helper.dart';
 import 'painters.dart';
 import 'settings_dialog.dart';
+import 'celebration_overlay.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -213,6 +214,10 @@ class _GameScreenState extends State<GameScreen>
   final List<GlobalKey> _pieceKeys = [GlobalKey(), GlobalKey(), GlobalKey()];
   final GlobalKey _boardKey = GlobalKey();
   final GlobalKey _stackKey = GlobalKey();
+
+  // ── Celebrations ──
+  final GlobalKey<CelebrationOverlayState> _celebrationKey = GlobalKey();
+  int _prevLevel = 1;
 
   // ── Gamification ──
   int comboCount = 0;
@@ -662,15 +667,15 @@ class _GameScreenState extends State<GameScreen>
         const GameCoordinate(1, 0),
         const GameCoordinate(2, 0)
       ], // 3-line
-    ],
-    // ── Tier 1 (Levels 6-10): Intermediate ──
-    [
       [
         const GameCoordinate(0, 0),
         const GameCoordinate(1, 0),
         const GameCoordinate(0, 1),
         const GameCoordinate(1, 1)
       ], // 2x2 Square
+    ],
+    // ── Tier 1 (Levels 6-10): Intermediate ──
+    [
       [
         const GameCoordinate(0, 0),
         const GameCoordinate(1, 0),
@@ -909,6 +914,7 @@ class _GameScreenState extends State<GameScreen>
     gameScore = 0;
     comboCount = 0;
     streakCount = 0;
+    _prevLevel = 1;
     _scorePopups.clear();
     _comboText = null;
 
@@ -994,6 +1000,10 @@ class _GameScreenState extends State<GameScreen>
       setState(() {
         _clearingCells = cellsToClearCopy;
       });
+
+      // ── Celebration: line clear burst ──
+      _triggerLineClearCelebration(cellsToClearCopy);
+
       _clearController.forward(from: 0.0).then((_) {
         if (mounted) {
           setState(() {
@@ -1029,18 +1039,42 @@ class _GameScreenState extends State<GameScreen>
 
   /// Check if every non-hurdle cell is empty → perfect clear.
   /// Mutates state directly — call from within setState.
-  void _checkPerfectClear() {
+  bool _checkPerfectClear() {
     for (int x = 0; x < gridSize; x++) {
       for (int y = 0; y < gridSize; y++) {
         if (grid[x][y] >= 2 && !_clearingCells.contains(GameCoordinate(x, y))) {
-          return;
+          return false;
         }
       }
     }
     gameScore += 1000;
-    _queueScorePopup("✦ PERFECT CLEAR +1000 ✦", const Color(0xFF00F0FF),
+    _queueScorePopup(" PERFECT CLEAR +1000 ", const Color(0xFF00F0FF),
         isLarge: true);
     _haptic(HapticType.heavy);
+    return true;
+  }
+
+  /// Trigger particle bursts for all cells being cleared.
+  void _triggerLineClearCelebration(Set<GameCoordinate> cells) {
+    // 1. Capture the cell colors immediately before they are mutated.
+    List<Color> colors = [];
+    for (var c in cells) {
+      int ci = grid[c.x][c.y];
+      Color cellColor = (ci >= 0 && ci < shapeColors.length)
+          ? shapeColors[ci]
+          : Colors.grey;
+      colors.add(cellColor);
+    }
+
+    // 2. Post-frame callback ensures render boxes are fully laid out and we can safely trigger animations.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      List<Offset> centers = [];
+      for (var c in cells) {
+        centers.add(_getBoardCellCenter(c.x, c.y));
+      }
+      _celebrationKey.currentState?.triggerLineClearBurst(centers, colors);
+    });
   }
 
   // ═══════════════════════════════════════════════════
@@ -1121,10 +1155,36 @@ class _GameScreenState extends State<GameScreen>
       comboCount++;
       if (comboCount > 1) {
         _queueComboText(_comboLabel(comboCount));
+        // ── Celebration: combo fountain ──
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _celebrationKey.currentState?.triggerComboFountain(comboCount);
+          }
+        });
       }
-      _checkPerfectClear();
+      bool wasPerfect = _checkPerfectClear();
+      if (wasPerfect) {
+        // ── Celebration: perfect clear explosion ──
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            Offset boardCenter = _getBoardCellCenter(gridSize ~/ 2, gridSize ~/ 2);
+            _celebrationKey.currentState?.triggerPerfectClear(boardCenter);
+          }
+        });
+      }
     } else {
       comboCount = 0;
+    }
+
+    // ── Celebration: level up ──
+    int newLevel = level;
+    if (newLevel > _prevLevel) {
+      _prevLevel = newLevel;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _celebrationKey.currentState?.triggerLevelUp();
+        }
+      });
     }
 
     // ── Clean up piece ──
@@ -1162,6 +1222,13 @@ class _GameScreenState extends State<GameScreen>
         highScore = gameScore;
         isNewHighScore = true;
         _saveHighScore(highScore);
+
+        // ── Celebration: high score confetti rain ──
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _celebrationKey.currentState?.triggerHighScoreRain();
+          }
+        });
 
         // Notify player of new record
         NotificationService().showInstantNotification(
@@ -1929,6 +1996,13 @@ class _GameScreenState extends State<GameScreen>
                           size: layout.pieceSlotSize * 0.8,
                         )),
                       ))),
+
+            // ── Celebration Particle Overlay ──
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CelebrationOverlay(key: _celebrationKey),
+              ),
+            ),
           ],
         ),
       ),
