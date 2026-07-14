@@ -1959,13 +1959,10 @@ class _GameScreenState extends State<GameScreen>
                   height: 50,
                   child: (_isAdLoaded && _bannerAd != null)
                       ? Center(
-                          child: Transform.scale(
-                            scale: 0.75,
-                            child: SizedBox(
-                              height: _bannerAd!.size.height.toDouble(),
-                              width: _bannerAd!.size.width.toDouble(),
-                              child: AdWidget(ad: _bannerAd!),
-                            ),
+                          child: SizedBox(
+                            height: _bannerAd!.size.height.toDouble(),
+                            width: _bannerAd!.size.width.toDouble(),
+                            child: AdWidget(ad: _bannerAd!),
                           ),
                         )
                       : const SizedBox.shrink(),
