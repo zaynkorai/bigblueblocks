@@ -82,5 +82,132 @@
 		<!-- AdMob App ID — replace with real ID before release -->
 		<key>GADApplicationIdentifier</key>
 		<string>ca-app-pub-5648970483808453~4816132383</string>
+		<!-- App Tracking Transparency usage description (iOS 14.5+) -->
+		<key>NSUserTrackingUsageDescription</key>
+		<string>This allows us to show you relevant ads and support ongoing development of the game.</string>
+		<!-- SKAdNetwork IDs for ad attribution (iOS 14.5+) -->
+		<key>SKAdNetworkItems</key>
+		<array>
+			<!-- Google AdMob -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>cstr6suwn9.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>4fzdc2evr5.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>4pfyvq9l8r.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>2fnua5tdw4.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>ydx93a7ass.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>5a6flpkh64.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>p78ahlhg29.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>v72qych5uu.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>ludvb6z3bs.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>cp8zw746q7.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>3sh42y64q3.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>c6k4g5qg8m.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>s39g8k73mm.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>3qy4746246.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>f38h382jlk.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>hs6bdukanm.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>v4nxqhlyqp.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>wzmmz9fp6w.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>su67r6k2v3.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>yclnxrl5pm.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>4468km3ulz.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>e5fvkxwrpn.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>8c4e2ghe7u.skadnetwork</string>
+			</dict>
+			<!-- Google -->
+			<dict>
+				<key>SKAdNetworkIdentifier</key>
+				<string>zq492l623r.skadnetwork</string>
+			</dict>
+		</array>
 	</dict>
 </plist>

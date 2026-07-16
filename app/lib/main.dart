@@ -9,6 +9,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:bigblueblocks/services/notification_service.dart';
 import 'package:bigblueblocks/services/ad_helper.dart';
+import 'package:bigblueblocks/services/consent_manager.dart';
 import 'painters.dart';
 import 'settings_dialog.dart';
 import 'celebration_overlay.dart';
@@ -19,9 +20,6 @@ void main() async {
 
   // Initialize notifications
   await NotificationService().init();
-
-  // Initialize Google Mobile Ads SDK
-  MobileAds.instance.initialize();
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -231,6 +229,27 @@ class _GameScreenState extends State<GameScreen>
   BannerAd? _bannerAd;
   bool _isAdLoaded = false;
 
+  // ── Interstitial Ad ──
+  InterstitialAd? _interstitialAd;
+  bool _isInterstitialAdLoaded = false;
+  DateTime _lastInterstitialShowTime = DateTime.now(); // grace period: no interstitial on first game over
+  int _gameOverCountSinceLastAd = 0;
+  bool _declinedReviveThisGameOver = false; // skip interstitial after revive decline
+
+  // ── Rewarded Ad ──
+  RewardedAd? _rewardedAd;
+  bool _isRewardedAdLoaded = false;
+  bool _hasRevivedThisGame = false;
+  bool _rewardEarned = false; // tracks if reward was granted before ad dismiss
+  bool _isShowingRewardedAd = false;
+
+  // ── Ad Load Retry ──
+  int _interstitialRetryAttempt = 0;
+  int _rewardedRetryAttempt = 0;
+
+  // ── Consent ──
+  bool _isPrivacyOptionsRequired = false;
+
   // ── Settings ──
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
@@ -311,6 +330,25 @@ class _GameScreenState extends State<GameScreen>
           await _updateDailyReminder(v);
         },
         onHapticLight: () => _haptic(HapticType.light),
+        isPrivacyOptionsRequired: _isPrivacyOptionsRequired,
+        onPrivacySettingsTap: () {
+          Navigator.pop(ctx);
+          ConsentManager.instance.showPrivacyOptionsForm(
+            onDismissed: () {
+              if (mounted) {
+                setState(() {
+                  _isPrivacyOptionsRequired =
+                      ConsentManager.instance.isPrivacyOptionsRequired();
+                });
+                if (ConsentManager.instance.canRequestAds()) {
+                  _loadBannerAd();
+                  _loadInterstitialAd();
+                  _loadRewardedAd();
+                }
+              }
+            },
+          );
+        },
       ),
     );
   }
@@ -516,7 +554,26 @@ class _GameScreenState extends State<GameScreen>
     } finally {
       // Always remove splash screen after attempt
       FlutterNativeSplash.remove();
+      _gatherConsent();
     }
+  }
+
+  Future<void> _gatherConsent() async {
+    await ConsentManager.instance.gatherConsent(
+      onConsentComplete: () {
+        if (mounted) {
+          setState(() {
+            _isPrivacyOptionsRequired =
+                ConsentManager.instance.isPrivacyOptionsRequired();
+          });
+          if (ConsentManager.instance.canRequestAds()) {
+            _loadBannerAd();
+            _loadInterstitialAd();
+            _loadRewardedAd();
+          }
+        }
+      },
+    );
   }
 
   Future<void> _saveSettings() async {
@@ -568,7 +625,6 @@ class _GameScreenState extends State<GameScreen>
     )..repeat();
 
     initGame();
-    _loadBannerAd();
 
     // Schedule settings load after first frame to ensure bindings are ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -580,6 +636,8 @@ class _GameScreenState extends State<GameScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _bannerAd?.dispose();
+    _interstitialAd?.dispose();
+    _rewardedAd?.dispose();
     _clearController.dispose();
     _thudController.dispose();
     _dealController.dispose();
@@ -594,6 +652,9 @@ class _GameScreenState extends State<GameScreen>
   /// Loads a 320×50 standard banner ad.
   void _loadBannerAd() {
     if (!AdHelper.isSupportedPlatform) {
+      return;
+    }
+    if (!ConsentManager.instance.canRequestAds()) {
       return;
     }
     _bannerAd = BannerAd(
@@ -614,10 +675,235 @@ class _GameScreenState extends State<GameScreen>
     )..load();
   }
 
+  // ═══════════════════════════════════════════════════
+  //  INTERSTITIAL AD
+  // ═══════════════════════════════════════════════════
+
+  void _loadInterstitialAd() {
+    if (!AdHelper.isSupportedPlatform) return;
+    if (!ConsentManager.instance.canRequestAds()) return;
+    InterstitialAd.load(
+      adUnitId: AdHelper.interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _isInterstitialAdLoaded = true;
+          _interstitialRetryAttempt = 0;
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _interstitialAd = null;
+              _isInterstitialAdLoaded = false;
+              _loadInterstitialAd(); // preload next
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              debugPrint('InterstitialAd failed to show: $error');
+              ad.dispose();
+              _interstitialAd = null;
+              _isInterstitialAdLoaded = false;
+              _loadInterstitialAd();
+            },
+          );
+        },
+        onAdFailedToLoad: (error) {
+          debugPrint('InterstitialAd failed to load: $error');
+          _isInterstitialAdLoaded = false;
+          // Retry with exponential backoff: 30s, 60s, 120s, capped at 120s
+          _interstitialRetryAttempt++;
+          final delaySec = min(30 * pow(2, _interstitialRetryAttempt - 1).toInt(), 120);
+          Future.delayed(Duration(seconds: delaySec), () {
+            if (mounted) _loadInterstitialAd();
+          });
+        },
+      ),
+    );
+  }
+
+  /// Shows an interstitial ad if the frequency cap is met.
+  /// Cap: ≥3 minutes since last show **and** ≥3 game-overs since last ad.
+  void _showInterstitialAdIfReady() {
+    if (!_isInterstitialAdLoaded || _interstitialAd == null) return;
+    // Skip interstitial if the player just declined the revive offer
+    // to avoid a double full-screen ad hit.
+    if (_declinedReviveThisGameOver) return;
+
+    final now = DateTime.now();
+    final timeMet = now.difference(_lastInterstitialShowTime).inMinutes >= 3;
+    final countMet = _gameOverCountSinceLastAd >= 3;
+
+    if (timeMet && countMet) {
+      _interstitialAd!.show();
+      _lastInterstitialShowTime = now;
+      _gameOverCountSinceLastAd = 0;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  REWARDED AD
+  // ═══════════════════════════════════════════════════
+
+  void _loadRewardedAd() {
+    if (!AdHelper.isSupportedPlatform) return;
+    if (!ConsentManager.instance.canRequestAds()) return;
+    RewardedAd.load(
+      adUnitId: AdHelper.rewardedAdUnitId,
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewardedAd = ad;
+          _isRewardedAdLoaded = true;
+          _rewardedRetryAttempt = 0;
+          ad.fullScreenContentCallback = FullScreenContentCallback(
+            onAdDismissedFullScreenContent: (ad) {
+              ad.dispose();
+              _rewardedAd = null;
+              _isRewardedAdLoaded = false;
+              if (mounted) {
+                setState(() {
+                  _isShowingRewardedAd = false;
+                });
+              }
+              _loadRewardedAd(); // preload next
+
+              // If the user dismissed the ad without earning the reward,
+              // fall through to game over (prevents soft-lock).
+              if (!_rewardEarned && mounted) {
+                setState(() {
+                  _triggerGameOver();
+                });
+              }
+            },
+            onAdFailedToShowFullScreenContent: (ad, error) {
+              debugPrint('RewardedAd failed to show: $error');
+              ad.dispose();
+              _rewardedAd = null;
+              _isRewardedAdLoaded = false;
+              if (mounted) {
+                setState(() {
+                  _isShowingRewardedAd = false;
+                });
+              }
+              _loadRewardedAd();
+              // Ad couldn't show — fall through to game over
+              if (mounted) {
+                setState(() {
+                  _triggerGameOver();
+                });
+              }
+            },
+          );
+        },
+        onAdFailedToLoad: (error) {
+          debugPrint('RewardedAd failed to load: $error');
+          _isRewardedAdLoaded = false;
+          // Retry with exponential backoff: 30s, 60s, 120s, capped at 120s
+          _rewardedRetryAttempt++;
+          final delaySec = min(30 * pow(2, _rewardedRetryAttempt - 1).toInt(), 120);
+          Future.delayed(Duration(seconds: delaySec), () {
+            if (mounted) _loadRewardedAd();
+          });
+        },
+      ),
+    );
+  }
+
+  /// Shows the rewarded ad for the revive feature.
+  /// On reward earned: clears center 4×4 grid and resumes play.
+  /// On dismiss without reward: falls through to game over.
+  void _showRewardedAdForRevive() {
+    if (_isShowingRewardedAd) return;
+
+    if (!_isRewardedAdLoaded || _rewardedAd == null) {
+      // Ad not available — fall through to game over
+      _triggerGameOver();
+      return;
+    }
+
+    setState(() {
+      _isShowingRewardedAd = true;
+    });
+    _rewardEarned = false; // reset before showing
+
+    _rewardedAd!.show(
+      onUserEarnedReward: (ad, reward) {
+        _rewardEarned = true;
+        setState(() {
+          _hasRevivedThisGame = true;
+
+          // Clear center 4×4 grid (coordinates 2–5)
+          for (int x = 2; x <= 5; x++) {
+            for (int y = 2; y <= 5; y++) {
+              if (grid[x][y] != 0) {
+                if (grid[x][y] == 1) {
+                  // Hurdle cleared — it is now playable/capturable
+                  totalCapturable++;
+                } else {
+                  // Normal block cleared — decrement captured count
+                  capturedCount--;
+                }
+                grid[x][y] = 0;
+              }
+            }
+          }
+
+          gameState = 'PLAY';
+          _requiresLift = true;
+
+          // Re-check: if still no valid moves after clearing, trigger game over
+          if (!canAnyPieceFit()) {
+            _triggerGameOver();
+          }
+        });
+      },
+    );
+  }
+
+  // ═══════════════════════════════════════════════════
+  //  GAME OVER (extracted helper)
+  // ═══════════════════════════════════════════════════
+
+  void _triggerGameOver() {
+    _tutorialStep = 0;
+    _gameOverCountSinceLastAd++;
+
+    if (gameScore > highScore) {
+      highScore = gameScore;
+      isNewHighScore = true;
+      _saveHighScore(highScore);
+
+      // ── Celebration: high score confetti rain ──
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _celebrationKey.currentState?.triggerHighScoreRain();
+        }
+      });
+
+      // Notify player of new record
+      NotificationService().showInstantNotification(
+        title: '🏆 New Record!',
+        body:
+            'Fantastic! You just set a new high score of $highScore! Keep up the great work.',
+        useBigText: true,
+      );
+    }
+    _shakeController.forward(from: 0);
+
+    // Show interstitial ad (if frequency cap allows) BEFORE the game-over
+    // screen so the player sees their score after the ad dismisses.
+    _showInterstitialAdIfReady();
+
+    // Transition to END state after the interstitial is shown (or skipped).
+    gameState = 'END';
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       NotificationService().dismissAllNotifications();
+      if (!ConsentManager.instance.isMobileAdsInitialized) {
+        _gatherConsent();
+      }
     }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
@@ -655,9 +941,9 @@ class _GameScreenState extends State<GameScreen>
   // ═══════════════════════════════════════════════════
 
   // Pieces grouped by difficulty tier
-  // Tier 0 (Levels 1-4): dot, 2-line, corner, 3-line, O-block, L-block
-  // Tier 1 (Levels 5-6): 4-line, T-block
-  // Tier 2 (Levels 7+): 5-line, Plus, U
+  // Tier 0 (Levels 1-5): 2-line, 3-line, 2x2 Square, 4-line, Zigzag
+  // Tier 1 (Levels 6-10): Corner (Big L)
+  // Tier 2 (Levels 11+): T-block, 3x3 Square (dot)
   static final List<List<List<GameCoordinate>>> _pieceTiers = [
     // ── Tier 0 (Levels 1-5): Very Simple ──
     [
@@ -673,6 +959,18 @@ class _GameScreenState extends State<GameScreen>
         const GameCoordinate(0, 1),
         const GameCoordinate(1, 1)
       ], // 2x2 Square
+      [
+        const GameCoordinate(0, 0),
+        const GameCoordinate(1, 0),
+        const GameCoordinate(2, 0),
+        const GameCoordinate(3, 0)
+      ], // 4-line
+      [
+        const GameCoordinate(0, 0),
+        const GameCoordinate(1, 0),
+        const GameCoordinate(1, 1),
+        const GameCoordinate(2, 1)
+      ], // Zigzag block
     ],
     // ── Tier 1 (Levels 6-10): Intermediate ──
     [
@@ -686,12 +984,6 @@ class _GameScreenState extends State<GameScreen>
     ],
     // ── Tier 2 (Levels 11+): Advanced (but still simple) ──
     [
-      [
-        const GameCoordinate(0, 0),
-        const GameCoordinate(1, 0),
-        const GameCoordinate(2, 0),
-        const GameCoordinate(3, 0)
-      ], // 4-line
       [
         const GameCoordinate(1, 0),
         const GameCoordinate(0, 1),
@@ -795,6 +1087,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void selectPiece(int index) {
+    if (gameState != 'PLAY') return;
     if (availablePieces[index] == null) return;
     setState(() {
       selectedPieceIndex = index;
@@ -917,6 +1210,8 @@ class _GameScreenState extends State<GameScreen>
     _prevLevel = 1;
     _scorePopups.clear();
     _comboText = null;
+    _hasRevivedThisGame = false;
+    _declinedReviveThisGameOver = false;
 
     _placeHurdles();
 
@@ -1216,29 +1511,12 @@ class _GameScreenState extends State<GameScreen>
 
     // ── Check game over ──
     if (!canAnyPieceFit()) {
-      _tutorialStep = 0; // stop tutorial
-      gameState = 'END';
-      if (gameScore > highScore) {
-        highScore = gameScore;
-        isNewHighScore = true;
-        _saveHighScore(highScore);
-
-        // ── Celebration: high score confetti rain ──
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _celebrationKey.currentState?.triggerHighScoreRain();
-          }
-        });
-
-        // Notify player of new record
-        NotificationService().showInstantNotification(
-          title: '🏆 New Record!',
-          body:
-              'Fantastic! You just set a new high score of $highScore! Keep up the great work.',
-          useBigText: true,
-        );
+      if (!_hasRevivedThisGame && _isRewardedAdLoaded) {
+        // Offer the player a chance to revive
+        gameState = 'REVIVE_OFFER';
+      } else {
+        _triggerGameOver();
       }
-      _shakeController.forward(from: 0);
     } else {
       _requiresLift = true;
     }
@@ -1776,6 +2054,150 @@ class _GameScreenState extends State<GameScreen>
                                                       fontWeight: FontWeight.bold,
                                                       letterSpacing: 2,
                                                     )),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+
+                                      // Revive offer overlay
+                                      if (gameState == 'REVIVE_OFFER')
+                                        TweenAnimationBuilder<double>(
+                                          key: const ValueKey('revive_offer_fade'),
+                                          duration:
+                                              const Duration(milliseconds: 400),
+                                          tween: Tween(begin: 0.0, end: 1.0),
+                                          curve: Curves.easeOut,
+                                          builder: (context, opacity, child) {
+                                            return Opacity(
+                                                opacity: opacity, child: child);
+                                          },
+                                          child: Container(
+                                            color:
+                                                bgDarkBlue.withValues(alpha: 0.92),
+                                            child: Center(
+                                              child: Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  const Text("💎",
+                                                      style: TextStyle(
+                                                          fontSize: 48)),
+                                                  SizedBox(
+                                                      height: layout.spacingMd),
+                                                  Text("SECOND CHANCE",
+                                                      textAlign: TextAlign.center,
+                                                      style: TextStyle(
+                                                          color: gameYellow,
+                                                          fontSize: layout.fontXl,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          letterSpacing: 2)),
+                                                  SizedBox(
+                                                      height: layout.spacingSm),
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                            horizontal: 32),
+                                                    child: Text(
+                                                        "Watch a short ad to clear the center and keep playing!",
+                                                        textAlign:
+                                                            TextAlign.center,
+                                                        style: TextStyle(
+                                                            color: fontWhite
+                                                                .withValues(
+                                                                    alpha: 0.7),
+                                                            fontSize:
+                                                                layout.fontSm *
+                                                                    1.1)),
+                                                  ),
+                                                  SizedBox(
+                                                      height: layout.spacingMd *
+                                                          2),
+                                                  GestureDetector(
+                                                    onPanDown: (_) {
+                                                      _haptic(
+                                                          HapticType.medium);
+                                                      setState(() {});
+                                                      _showRewardedAdForRevive();
+                                                    },
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 28,
+                                                          vertical: 14),
+                                                      decoration: BoxDecoration(
+                                                        color: gameYellow,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                                100),
+                                                        boxShadow: [
+                                                          BoxShadow(
+                                                            color: gameYellow
+                                                                .withValues(
+                                                                    alpha: 0.4),
+                                                            blurRadius: 16,
+                                                            spreadRadius: 2,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          const Icon(
+                                                              Icons
+                                                                  .play_circle_fill,
+                                                              color: bgDarkBlue,
+                                                              size: 20),
+                                                          const SizedBox(
+                                                              width: 8),
+                                                          Text(
+                                                              "WATCH AD TO REVIVE",
+                                                              style: TextStyle(
+                                                                  color:
+                                                                      bgDarkBlue,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  fontSize: layout
+                                                                          .fontSm *
+                                                                      1.1,
+                                                                  letterSpacing:
+                                                                      1)),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  SizedBox(
+                                                      height: layout.spacingMd),
+                                                  GestureDetector(
+                                                    onPanDown: (_) {
+                                                      _haptic(
+                                                          HapticType.light);
+                                                      setState(() {
+                                                        _declinedReviveThisGameOver = true;
+                                                        _triggerGameOver();
+                                                      });
+                                                    },
+                                                    child: Padding(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 24,
+                                                          vertical: 10),
+                                                      child: Text(
+                                                          "NO THANKS",
+                                                          style: TextStyle(
+                                                              color: fontWhite
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.7),
+                                                              fontSize: layout
+                                                                  .fontMd,
+                                                              letterSpacing:
+                                                                  1.5)),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ),

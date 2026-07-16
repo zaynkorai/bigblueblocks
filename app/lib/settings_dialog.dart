@@ -96,12 +96,16 @@ class MoreSettingsDialog extends StatefulWidget {
   final bool notificationsEnabled;
   final ValueChanged<bool> onNotificationsChanged;
   final VoidCallback onHapticLight;
+  final bool isPrivacyOptionsRequired;
+  final VoidCallback onPrivacySettingsTap;
 
   const MoreSettingsDialog({
     super.key,
     required this.notificationsEnabled,
     required this.onNotificationsChanged,
     required this.onHapticLight,
+    required this.isPrivacyOptionsRequired,
+    required this.onPrivacySettingsTap,
   });
 
   @override
@@ -129,7 +133,7 @@ class _MoreSettingsDialogState extends State<MoreSettingsDialog> {
           children: [
             const Text('MORE SETTINGS',
                 style: TextStyle(
-                    color: fontWhite,
+                     color: fontWhite,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 2)),
@@ -212,6 +216,13 @@ class _MoreSettingsDialogState extends State<MoreSettingsDialog> {
               onHapticLight: widget.onHapticLight,
               onTap: () => launchUrl(Uri.parse('https://bigblueblocks.app/privacy.html')),
             ),
+            if (widget.isPrivacyOptionsRequired)
+              LinkRow(
+                icon: Icons.settings_accessibility_rounded,
+                label: 'Privacy Settings',
+                onHapticLight: widget.onHapticLight,
+                onTap: widget.onPrivacySettingsTap,
+              ),
             LinkRow(
               icon: Icons.info_rounded,
               label: 'About Us',

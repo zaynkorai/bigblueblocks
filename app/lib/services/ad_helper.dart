@@ -25,4 +25,24 @@ class AdHelper {
     }
     return '';
   }
+
+  // ── Interstitial Ad Unit IDs ──
+  static String get interstitialAdUnitId {
+    if (Platform.isAndroid) {
+      return 'ca-app-pub-5648970483808453/4309874112'; // Android production interstitial
+    } else if (Platform.isIOS) {
+      return 'ca-app-pub-5648970483808453/2491048498'; // iOS production interstitial
+    }
+    return '';
+  }
+
+  // ── Rewarded Ad Unit IDs ──
+  static String get rewardedAdUnitId {
+    if (Platform.isAndroid) {
+      return 'ca-app-pub-5648970483808453/9562200794'; // Android production rewarded
+    } else if (Platform.isIOS) {
+      return 'ca-app-pub-5648970483808453/6528843348'; // iOS production rewarded
+    }
+    return '';
+  }
 }

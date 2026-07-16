@@ -2,7 +2,9 @@
 
 **Celebrations** — Confetti, combo fountains, perfect clear starbursts, and gold shimmers bring a whole new level of polish and reward to every move.
 
-**Monetization & Ads** — Integrated Google AdMob banner ads at the bottom of the screen, supporting the app's ongoing development while keeping it completely free to play.
+**Monetization & Ads** — Integrated Google AdMob banner ads at the bottom of the screen, plus full-screen interstitial and rewarded ads, supporting the app's ongoing development while keeping it free to play.
+
+**Privacy & Consent (GDPR/UMP)** — Added a standard user consent flow so you can manage your personalized ad settings easily.
 
 **Gameplay & Accessibility** — Simplified game shapes for a more enjoyable, accessible puzzle experience, combined with smooth block drawing sliding animations and a refined color palette.
 
