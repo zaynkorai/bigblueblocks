@@ -10,6 +10,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:bigblueblocks/services/notification_service.dart';
 import 'package:bigblueblocks/services/ad_helper.dart';
 import 'package:bigblueblocks/services/consent_manager.dart';
+import 'package:bigblueblocks/services/audio_service.dart';
 import 'painters.dart';
 import 'settings_dialog.dart';
 import 'celebration_overlay.dart';
@@ -304,6 +305,7 @@ class _GameScreenState extends State<GameScreen>
           setState(() => _soundEnabled = v);
           _saveSettings();
           if (v) SystemSound.play(SystemSoundType.click);
+          AudioService().setSoundEnabled(v);
         },
         onVibrationChanged: (v) {
           setState(() => _vibrationEnabled = v);
@@ -540,6 +542,8 @@ class _GameScreenState extends State<GameScreen>
         _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
       });
 
+      await AudioService().initialize(soundEnabled: _soundEnabled);
+
       // Ensure reminder state matches preference
       await _updateDailyReminder(_notificationsEnabled);
 
@@ -646,6 +650,7 @@ class _GameScreenState extends State<GameScreen>
     _fingerController.dispose();
     _comboTimer?.cancel();
     _idleTimer?.cancel();
+    AudioService().dispose();
     super.dispose();
   }
 
@@ -853,8 +858,11 @@ class _GameScreenState extends State<GameScreen>
           // Re-check: if still no valid moves after clearing, trigger game over
           if (!canAnyPieceFit()) {
             _triggerGameOver();
+          } else {
+            AudioService().playReviveSFX();
           }
         });
+        _updateAudioState();
       },
     );
   }
@@ -866,11 +874,13 @@ class _GameScreenState extends State<GameScreen>
   void _triggerGameOver() {
     _tutorialStep = 0;
     _gameOverCountSinceLastAd++;
+    AudioService().playGameOverSFX();
 
     if (gameScore > highScore) {
       highScore = gameScore;
       isNewHighScore = true;
       _saveHighScore(highScore);
+      AudioService().playHighScoreSFX();
 
       // ── Celebration: high score confetti rain ──
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -904,9 +914,13 @@ class _GameScreenState extends State<GameScreen>
       if (!ConsentManager.instance.isMobileAdsInitialized) {
         _gatherConsent();
       }
+      if (_soundEnabled) {
+        AudioService().play();
+      }
     }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
+      AudioService().pause();
       if (_tutorialStep == 1 && _isAutoPlayingDemo) {
         setState(() {
           _tutorialStep = 0;
@@ -1228,6 +1242,17 @@ class _GameScreenState extends State<GameScreen>
       gameState = 'PLAY';
       isNewHighScore = false;
     });
+    _updateAudioState();
+  }
+
+  void _updateAudioState() {
+    final filledCount = grid.expand((row) => row).where((cell) => cell != 0).length;
+    final fillPercent = filledCount / (gridSize * gridSize);
+    AudioService().updateGameState(
+      fillPercentage: fillPercent,
+      comboCount: comboCount,
+      gameState: gameState,
+    );
   }
 
   // ═══════════════════════════════════════════════════
@@ -1443,6 +1468,7 @@ class _GameScreenState extends State<GameScreen>
     int streakBonus = streakCount * 5;
     gameScore += placementPoints + streakBonus;
     _haptic(HapticType.heavy);
+    AudioService().playPlaceSFX();
 
     // ── Line clear ──
     int cleared = _performLineClear();
@@ -1456,6 +1482,9 @@ class _GameScreenState extends State<GameScreen>
             _celebrationKey.currentState?.triggerComboFountain(comboCount);
           }
         });
+        AudioService().playComboSFX();
+      } else {
+        AudioService().playClearSFX();
       }
       bool wasPerfect = _checkPerfectClear();
       if (wasPerfect) {
@@ -1466,6 +1495,7 @@ class _GameScreenState extends State<GameScreen>
             _celebrationKey.currentState?.triggerPerfectClear(boardCenter);
           }
         });
+        AudioService().playPerfectClearSFX();
       }
     } else {
       comboCount = 0;
@@ -1480,6 +1510,7 @@ class _GameScreenState extends State<GameScreen>
           _celebrationKey.currentState?.triggerLevelUp();
         }
       });
+      AudioService().playLevelUpSFX();
     }
 
     // ── Clean up piece ──
@@ -1521,6 +1552,7 @@ class _GameScreenState extends State<GameScreen>
       _requiresLift = true;
     }
     _resetIdleTimer();
+    _updateAudioState();
   }
 
   void _executeMoveTo(int newX, int newY) {

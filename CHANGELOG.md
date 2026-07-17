@@ -1,3 +1,13 @@
+# What's New in v1.2.1
+
+**Adaptive Soundtrack (BGM)** — Added dynamic looping background music using `just_audio` that scales its playback speed (from 1.0x to 1.1x at 60% grid fullness, and up to 1.25x speed at 80% fullness) to signal grid danger, and increases playback pitch by +5% per combo level starting at combo count 2 (capped at 1.25x) to build excitement.
+
+**Satisfying Sound Effects (SFX)** — Integrated dedicated audio players for 8 new gameplay sound effects: block placements (`place.wav`), line clears (`clear.wav`), combo chains (`combo.wav`), level up milestones (`level_up.wav`), board sweeps (`perfect_clear.wav`), game over states (`game_over.wav`), new high score fanfares (`high_score.wav`), and successful revives (`revive.wav`).
+
+**Smart Lifecycle & Settings Integration** — Automatically pauses background music when the app loses focus (moving to background or inactive states) and resumes on active focus. Fully synced all audio players with the settings dialog Sound switch to mute instantly when toggled off.
+
+---
+
 # What's New in v1.2.0
 
 **Celebrations** — Confetti, combo fountains, perfect clear starbursts, and gold shimmers bring a whole new level of polish and reward to every move.
