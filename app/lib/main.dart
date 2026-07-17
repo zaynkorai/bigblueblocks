@@ -14,6 +14,7 @@ import 'package:bigblueblocks/services/audio_service.dart';
 import 'painters.dart';
 import 'settings_dialog.dart';
 import 'celebration_overlay.dart';
+import 'terms_consent_screen.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +27,11 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  runApp(const BigBlueBlocksApp());
+
+  final prefs = await SharedPreferences.getInstance();
+  final hasAcceptedTerms = prefs.getBool('hasAcceptedTerms') ?? false;
+
+  runApp(BigBlueBlocksApp(hasAcceptedTerms: hasAcceptedTerms));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -136,8 +141,28 @@ class ScorePopup {
 //  APP
 // ═══════════════════════════════════════════════════════
 
-class BigBlueBlocksApp extends StatelessWidget {
-  const BigBlueBlocksApp({super.key});
+class BigBlueBlocksApp extends StatefulWidget {
+  final bool hasAcceptedTerms;
+  const BigBlueBlocksApp({super.key, required this.hasAcceptedTerms});
+
+  @override
+  State<BigBlueBlocksApp> createState() => _BigBlueBlocksAppState();
+}
+
+class _BigBlueBlocksAppState extends State<BigBlueBlocksApp> {
+  late bool _hasAcceptedTerms;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasAcceptedTerms = widget.hasAcceptedTerms;
+  }
+
+  void _onTermsAccepted() {
+    setState(() {
+      _hasAcceptedTerms = true;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,7 +178,9 @@ class BigBlueBlocksApp extends StatelessWidget {
           displayColor: fontWhite,
         ),
       ),
-      home: const GameScreen(),
+      home: _hasAcceptedTerms
+          ? const GameScreen()
+          : TermsConsentScreen(onAccepted: _onTermsAccepted),
     );
   }
 }
