@@ -303,6 +303,49 @@ class _CelebrationPainter extends CustomPainter {
 
   _CelebrationPainter(this.particles);
 
+  static final Path _unitStarPath = _buildUnitStarPath();
+  static final Path _unitTrianglePath = _buildUnitTrianglePath();
+
+  static Path _buildUnitStarPath() {
+    final path = Path();
+    for (int i = 0; i < 5; i++) {
+      double outerAngle = (i * 2 * pi / 5) - pi / 2;
+      double innerAngle = outerAngle + pi / 5;
+      double outerX = cos(outerAngle);
+      double outerY = sin(outerAngle);
+      double innerX = cos(innerAngle) * 0.45;
+      double innerY = sin(innerAngle) * 0.45;
+      if (i == 0) {
+        path.moveTo(outerX, outerY);
+      } else {
+        path.lineTo(outerX, outerY);
+      }
+      path.lineTo(innerX, innerY);
+    }
+    path.close();
+    return path;
+  }
+
+  static Path _buildUnitTrianglePath() {
+    final path = Path();
+    for (int i = 0; i < 3; i++) {
+      double angle = (i * 2 * pi / 3) - pi / 2;
+      double x = cos(angle);
+      double y = sin(angle);
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+    return path;
+  }
+
+  // Reusable paints to avoid dynamic allocations per-frame/per-particle
+  final Paint _paint = Paint()..style = PaintingStyle.fill;
+  final Paint _glowPaint = Paint()..style = PaintingStyle.fill;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (particles.isEmpty) return;
@@ -314,73 +357,59 @@ class _CelebrationPainter extends CustomPainter {
       canvas.translate(p.x, p.y);
       canvas.rotate(p.rotation);
 
-      final paint = Paint()
-        ..color = p.color.withValues(alpha: p.alpha.clamp(0.0, 1.0))
-        ..style = PaintingStyle.fill;
-
-      // Neon glow effect
-      final glowPaint = Paint()
-        ..color = p.color.withValues(alpha: (p.alpha * 0.3).clamp(0.0, 1.0))
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.size * 0.8);
+      _paint.color = p.color.withValues(alpha: p.alpha.clamp(0.0, 1.0));
+      _glowPaint.color = p.color.withValues(alpha: (p.alpha * 0.25).clamp(0.0, 1.0));
 
       switch (p.shape) {
         case ParticleShape.circle:
-          canvas.drawCircle(Offset.zero, p.size / 2, glowPaint);
-          canvas.drawCircle(Offset.zero, p.size / 2, paint);
+          // Glow layer (1.4x scale)
+          canvas.drawCircle(Offset.zero, p.size * 0.7, _glowPaint);
+          // Main shape (1.0x scale)
+          canvas.drawCircle(Offset.zero, p.size / 2, _paint);
 
         case ParticleShape.rect:
+          // Glow layer (1.4x scale)
+          final glowRect = Rect.fromCenter(
+            center: Offset.zero,
+            width: p.size * 1.4,
+            height: p.size * 0.84,
+          );
+          canvas.drawRect(glowRect, _glowPaint);
+          // Main shape (1.0x scale)
           final rect = Rect.fromCenter(
-              center: Offset.zero, width: p.size, height: p.size * 0.6);
-          canvas.drawRect(rect, glowPaint);
-          canvas.drawRect(rect, paint);
+            center: Offset.zero,
+            width: p.size,
+            height: p.size * 0.6,
+          );
+          canvas.drawRect(rect, _paint);
 
         case ParticleShape.star:
-          _drawStar(canvas, p.size / 2, paint, glowPaint);
+          // Glow layer (1.4x scale)
+          canvas.save();
+          canvas.scale(p.size * 0.7);
+          canvas.drawPath(_unitStarPath, _glowPaint);
+          canvas.restore();
+          // Main shape (1.0x scale)
+          canvas.save();
+          canvas.scale(p.size / 2);
+          canvas.drawPath(_unitStarPath, _paint);
+          canvas.restore();
 
         case ParticleShape.triangle:
-          _drawTriangle(canvas, p.size / 2, paint, glowPaint);
+          // Glow layer (1.4x scale)
+          canvas.save();
+          canvas.scale(p.size * 0.7);
+          canvas.drawPath(_unitTrianglePath, _glowPaint);
+          canvas.restore();
+          // Main shape (1.0x scale)
+          canvas.save();
+          canvas.scale(p.size / 2);
+          canvas.drawPath(_unitTrianglePath, _paint);
+          canvas.restore();
       }
 
       canvas.restore();
     }
-  }
-
-  void _drawStar(Canvas canvas, double r, Paint paint, Paint glowPaint) {
-    final path = Path();
-    for (int i = 0; i < 5; i++) {
-      double outerAngle = (i * 2 * pi / 5) - pi / 2;
-      double innerAngle = outerAngle + pi / 5;
-      double outerX = cos(outerAngle) * r;
-      double outerY = sin(outerAngle) * r;
-      double innerX = cos(innerAngle) * r * 0.45;
-      double innerY = sin(innerAngle) * r * 0.45;
-      if (i == 0) {
-        path.moveTo(outerX, outerY);
-      } else {
-        path.lineTo(outerX, outerY);
-      }
-      path.lineTo(innerX, innerY);
-    }
-    path.close();
-    canvas.drawPath(path, glowPaint);
-    canvas.drawPath(path, paint);
-  }
-
-  void _drawTriangle(Canvas canvas, double r, Paint paint, Paint glowPaint) {
-    final path = Path();
-    for (int i = 0; i < 3; i++) {
-      double angle = (i * 2 * pi / 3) - pi / 2;
-      double x = cos(angle) * r;
-      double y = sin(angle) * r;
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    path.close();
-    canvas.drawPath(path, glowPaint);
-    canvas.drawPath(path, paint);
   }
 
   @override

@@ -29,6 +29,14 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+
   final prefs = await SharedPreferences.getInstance();
   final hasAcceptedTerms = prefs.getBool('hasAcceptedTerms') ?? false;
 
