@@ -2,12 +2,13 @@
 
 **Terms & Privacy Consent Screen** — Added a custom-themed, responsive Terms of Service and Privacy Policy consent screen on initial app launch. The screen integrates seamlessly with the game's dark aesthetic and Orbitron typography, requiring players to agree to the policies before entering the game.
 
-
 **Adaptive Soundtrack (BGM)** — Added dynamic looping background music using `just_audio` that scales its playback speed (from 1.0x to 1.1x at 60% grid fullness, and up to 1.25x speed at 80% fullness) to signal grid danger, and increases playback pitch by +5% per combo level starting at combo count 2 (capped at 1.25x) to build excitement.
 
 **Satisfying Sound Effects (SFX)** — Integrated dedicated audio players for 8 new gameplay sound effects: block placements (`place.wav`), line clears (`clear.wav`), combo chains (`combo.wav`), level up milestones (`level_up.wav`), board sweeps (`perfect_clear.wav`), game over states (`game_over.wav`), new high score fanfares (`high_score.wav`), and successful revives (`revive.wav`).
 
 **Smart Lifecycle & Settings Integration** — Automatically pauses background music when the app loses focus (moving to background or inactive states) and resumes on active focus. Fully synced all audio players with the settings dialog Sound switch to mute instantly when toggled off.
+
+**Game Over False-Positive Fix** — Fixed an issue where the game would end prematurely when a placed piece cleared a line, even though the cleared line opened up space for subsequent pieces to fit. The logic now correctly treats cells pending line-clear animation as empty during validation checks.
 
 ---
 

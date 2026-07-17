@@ -105,7 +105,10 @@ class _TermsConsentScreenState extends State<TermsConsentScreen>
                       style: baseTextStyle,
                       children: [
                         const TextSpan(
-                          text: "Please read and agree to our ",
+                          text: "Welcome to Big Blue Blocks",
+                        ),
+                        const TextSpan(
+                          text: "Please read and accept to our ",
                         ),
                         TextSpan(
                           text: "Terms of Service",
@@ -131,9 +134,6 @@ class _TermsConsentScreenState extends State<TermsConsentScreen>
                             decorationThickness: 1.5,
                           ),
                           recognizer: _privacyRecognizer,
-                        ),
-                        const TextSpan(
-                          text: " to continue playing and enjoying our puzzle challenges.",
                         ),
                       ],
                     ),

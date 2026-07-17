@@ -15,6 +15,7 @@ import 'painters.dart';
 import 'settings_dialog.dart';
 import 'celebration_overlay.dart';
 import 'terms_consent_screen.dart';
+import 'splash_screen.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -151,6 +152,7 @@ class BigBlueBlocksApp extends StatefulWidget {
 
 class _BigBlueBlocksAppState extends State<BigBlueBlocksApp> {
   late bool _hasAcceptedTerms;
+  bool _showSplash = true;
 
   @override
   void initState() {
@@ -178,9 +180,26 @@ class _BigBlueBlocksAppState extends State<BigBlueBlocksApp> {
           displayColor: fontWhite,
         ),
       ),
-      home: _hasAcceptedTerms
-          ? const GameScreen()
-          : TermsConsentScreen(onAccepted: _onTermsAccepted),
+      home: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 600),
+        switchInCurve: Curves.easeInOut,
+        switchOutCurve: Curves.easeInOut,
+        child: _showSplash
+            ? CustomSplashScreen(
+                key: const ValueKey('splash'),
+                onFinished: () {
+                  setState(() {
+                    _showSplash = false;
+                  });
+                },
+              )
+            : (_hasAcceptedTerms
+                ? const GameScreen(key: ValueKey('game'))
+                : TermsConsentScreen(
+                    key: const ValueKey('consent'),
+                    onAccepted: _onTermsAccepted,
+                  )),
+      ),
     );
   }
 }
@@ -1009,9 +1028,8 @@ class _GameScreenState extends State<GameScreen>
       [
         const GameCoordinate(0, 0),
         const GameCoordinate(1, 0),
-        const GameCoordinate(1, 1),
-        const GameCoordinate(2, 1)
-      ], // Zigzag block
+        const GameCoordinate(1, 1)
+       ],
     ],
     // ── Tier 1 (Levels 6-10): Intermediate ──
     [
@@ -1025,6 +1043,12 @@ class _GameScreenState extends State<GameScreen>
     ],
     // ── Tier 2 (Levels 11+): Advanced (but still simple) ──
     [
+      [
+        const GameCoordinate(0, 0),
+        const GameCoordinate(1, 0),
+        const GameCoordinate(1, 1),
+        const GameCoordinate(2, 1)
+      ], // Zigzag block
       [
         const GameCoordinate(1, 0),
         const GameCoordinate(0, 1),
@@ -1163,8 +1187,14 @@ class _GameScreenState extends State<GameScreen>
             if (px < 0 ||
                 px >= gridSize ||
                 py < 0 ||
-                py >= gridSize ||
-                grid[px][py] != 0) {
+                py >= gridSize) {
+              fits = false;
+              break;
+            }
+            // Treat cells pending line-clear animation as empty
+            final occupied = grid[px][py] != 0 &&
+                !_clearingCells.contains(GameCoordinate(px, py));
+            if (occupied) {
               fits = false;
               break;
             }
