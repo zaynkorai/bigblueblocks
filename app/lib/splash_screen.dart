@@ -218,21 +218,6 @@ class _CustomSplashScreenState extends State<CustomSplashScreen>
       backgroundColor: const Color(0xFF010816), // Matching bgDarkBlue
       body: Stack(
         children: [
-          // Background Gradient Mesh Effect
-          Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.center,
-                  radius: 1.2,
-                  colors: [
-                    Color(0xFF0C1E43), // Rich deep blue
-                    Color(0xFF010816), // Solid dark blue
-                  ],
-                ),
-              ),
-            ),
-          ),
 
           // Custom Painter for trails, particles, and the Z-tetromino block
           Positioned.fill(
@@ -262,18 +247,7 @@ class _CustomSplashScreenState extends State<CustomSplashScreen>
                       fontWeight: FontWeight.w900,
                       color: Colors.white,
                       letterSpacing: 2.0,
-                      shadows: [
-                        Shadow(
-                          blurRadius: 20.0,
-                          color: const Color(0xFF2E7DFF).withValues(alpha: 0.8),
-                          offset: const Offset(0, 0),
-                        ),
-                        Shadow(
-                          blurRadius: 10.0,
-                          color: gameYellow.withValues(alpha: 0.5),
-                          offset: const Offset(0, 0),
-                        ),
-                      ],
+
                     ),
                   ),
 
@@ -379,7 +353,7 @@ class SplashAnimationPainter extends CustomPainter {
             ..color = const Color(0xFF2E7DFF).withValues(alpha: opacity * 0.3)
             ..maskFilter = MaskFilter.blur(BlurStyle.normal, cs * 0.3),
         );
-
+        
         canvas.drawRRect(rrect, fillPaint);
 
         // White inner border highlight
