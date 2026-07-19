@@ -1398,6 +1398,17 @@ class _GameScreenState extends State<GameScreen>
             _clearingCells = _clearingCells.difference(cellsToClearCopy);
             _placeHurdles();
             totalCapturable = gridSize * gridSize - hurdleCount;
+
+            // Re-check game over now that new hurdles have been placed.
+            // The earlier check in _tryCompletePlacement ran before hurdles
+            // were finalised, so it may have incorrectly found room.
+            if (gameState == 'PLAY' && !canAnyPieceFit()) {
+              if (!_hasRevivedThisGame && _isRewardedAdLoaded) {
+                gameState = 'REVIVE_OFFER';
+              } else {
+                _triggerGameOver();
+              }
+            }
           });
         }
       });
