@@ -85,6 +85,10 @@
 		<!-- App Tracking Transparency usage description (iOS 14.5+) -->
 		<key>NSUserTrackingUsageDescription</key>
 		<string>This allows us to show you relevant ads and support ongoing development of the game.</string>
+		<!-- Microphone usage description (required due to audio libraries referencing the APIs) -->
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Microphone access is required for audio functionality and sound effects in the game.</string>
+
 		<!-- SKAdNetwork IDs for ad attribution (iOS 14.5+) -->
 		<key>SKAdNetworkItems</key>
 		<array>
