@@ -601,18 +601,16 @@ class _GameScreenState extends State<GameScreen>
       // Ensure reminder state matches preference
       await _updateDailyReminder(_notificationsEnabled);
 
-      if (isFirstLaunch) {
+      // Dismiss splash and gather consent first
+      FlutterNativeSplash.remove();
+      await _gatherConsent();
+
+      if (isFirstLaunch && mounted) {
         await prefs.setBool('isFirstLaunch', false);
-        Future.delayed(const Duration(milliseconds: 800), () {
-          if (mounted) _showTutorial();
-        });
+        _showTutorial();
       }
     } catch (e) {
       debugPrint('Error loading settings: $e');
-    } finally {
-      // Always remove splash screen after attempt
-      FlutterNativeSplash.remove();
-      _gatherConsent();
     }
   }
 
@@ -719,7 +717,7 @@ class _GameScreenState extends State<GameScreen>
     _bannerAd = BannerAd(
       adUnitId: AdHelper.bannerAdUnitId,
       size: AdSize.banner,
-      request: const AdRequest(),
+      request: AdHelper.createAdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (ad) {
           setState(() {
@@ -743,7 +741,7 @@ class _GameScreenState extends State<GameScreen>
     if (!ConsentManager.instance.canRequestAds()) return;
     InterstitialAd.load(
       adUnitId: AdHelper.interstitialAdUnitId,
-      request: const AdRequest(),
+      request: AdHelper.createAdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           _interstitialAd = ad;
@@ -807,7 +805,7 @@ class _GameScreenState extends State<GameScreen>
     if (!ConsentManager.instance.canRequestAds()) return;
     RewardedAd.load(
       adUnitId: AdHelper.rewardedAdUnitId,
-      request: const AdRequest(),
+      request: AdHelper.createAdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           _rewardedAd = ad;

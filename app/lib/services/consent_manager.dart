@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:bigblueblocks/services/ad_helper.dart';
@@ -33,6 +34,14 @@ class ConsentManager {
   }) async {
     if (!AdHelper.isSupportedPlatform) {
       onConsentComplete();
+      return;
+    }
+
+    // On iOS, completely disable UMP consent forms to comply with Apple Guideline 5.1.2.
+    if (Platform.isIOS) {
+      debugPrint('ConsentManager: Skipping UMP consent flow on iOS.');
+      _canRequestAds = true;
+      _initMobileAdsIfAllowed(onConsentComplete);
       return;
     }
 
@@ -101,6 +110,7 @@ class ConsentManager {
   /// Returns `true` if the current consent status allows ad requests.
   bool canRequestAds() {
     if (!AdHelper.isSupportedPlatform) return false;
+    if (Platform.isIOS) return true;
     return _canRequestAds;
   }
 
@@ -109,6 +119,7 @@ class ConsentManager {
   /// update their consent choices).
   bool isPrivacyOptionsRequired() {
     if (!AdHelper.isSupportedPlatform) return false;
+    if (Platform.isIOS) return false;
     return _privacyOptionsRequirementStatus ==
         PrivacyOptionsRequirementStatus.required;
   }
@@ -117,6 +128,10 @@ class ConsentManager {
   /// their choices. Should only be called when [isPrivacyOptionsRequired]
   /// returns `true`.
   void showPrivacyOptionsForm({VoidCallback? onDismissed}) {
+    if (Platform.isIOS) {
+      onDismissed?.call();
+      return;
+    }
     ConsentForm.showPrivacyOptionsForm((formError) async {
       if (formError != null) {
         debugPrint('Privacy options form error: [${formError.errorCode}] ${formError.message}');

@@ -82,9 +82,6 @@
 		<!-- AdMob App ID — replace with real ID before release -->
 		<key>GADApplicationIdentifier</key>
 		<string>ca-app-pub-5648970483808453~4816132383</string>
-		<!-- App Tracking Transparency usage description (iOS 14.5+) -->
-		<key>NSUserTrackingUsageDescription</key>
-		<string>This allows us to show you relevant ads and support ongoing development of the game.</string>
 		<!-- Microphone usage description (required due to audio libraries referencing the APIs) -->
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Microphone access is required for audio functionality and sound effects in the game.</string>

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 /// Centralised helper for AdMob IDs.
 ///
@@ -14,6 +15,13 @@ class AdHelper {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Returns an [AdRequest] configured with non-personalized ads on iOS to guarantee no personal data is processed.
+  static AdRequest createAdRequest() {
+    return AdRequest(
+      nonPersonalizedAds: Platform.isIOS,
+    );
   }
 
   // ── Banner Ad Unit IDs ──
